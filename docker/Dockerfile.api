@@ -1,0 +1,35 @@
+# ARGUS Chess — backend API container.
+# Installs Stockfish from the Debian repositories; the application receives
+# its location through ARGUS_STOCKFISH_PATH (see docker-compose.yml).
+
+FROM python:3.12-slim AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Stockfish + build tools for the Python dependencies that need them.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends stockfish curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install packages first for better layer caching.
+COPY packages/argus/pyproject.toml packages/argus/README.md* /app/packages/argus/
+COPY packages/argus/argus /app/packages/argus/argus
+COPY apps/api/pyproject.toml /app/apps/api/
+RUN pip install --no-cache-dir -e /app/packages/argus && pip install --no-cache-dir -e /app/apps/api
+
+COPY apps/api/argus_api /app/apps/api/argus_api
+
+ENV ARGUS_STOCKFISH_PATH=/usr/games/stockfish \
+    ARGUS_API_HOST=0.0.0.0 \
+    ARGUS_API_PORT=8000
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=10s --timeout=5s --retries=12 \
+    CMD curl -fsS http://127.0.0.1:8000/health || exit 1
+
+CMD ["uvicorn", "argus_api.main:app", "--host", "0.0.0.0", "--port", "8000"]

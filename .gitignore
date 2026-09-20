@@ -1,0 +1,55 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- Node / Next.js ----
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# ---- Environment & secrets ----
+.env
+.env.local
+.env.*.local
+*.pem
+
+# ---- Local databases ----
+*.db
+*.sqlite3
+
+# ---- Engine binaries (installed/downloaded locally, never committed) ----
+engine/stockfish/*
+!engine/stockfish/.gitkeep
+
+# ---- Data artifacts (large generated files stay out of git) ----
+data/raw/*
+data/processed/*
+data/features/*
+data/models/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/features/.gitkeep
+!data/models/.gitkeep
+!data/README.md
+
+# ---- OS / IDE / tooling artifacts ----
+.DS_Store
+.idea/
+*.swp
+.freebuff/
+
+# ---- Logs ----
+*.log
+logs/

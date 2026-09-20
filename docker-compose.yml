@@ -1,0 +1,79 @@
+# ARGUS Chess — local development environment.
+# Usage: docker compose up --build
+# The API container installs Stockfish from the Debian repositories and
+# exposes it to the application through ARGUS_STOCKFISH_PATH.
+
+name: argus-chess
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: argus
+      POSTGRES_PASSWORD: argus
+      POSTGRES_DB: argus
+    ports:
+      - "${POSTGRES_HOST_PORT:-5434}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U argus -d argus"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "no"]
+    ports:
+      - "${REDIS_HOST_PORT:-6380}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    restart: unless-stopped
+    environment:
+      ARGUS_ENVIRONMENT: development
+      ARGUS_LOG_LEVEL: INFO
+      ARGUS_DATABASE_URL: postgresql+psycopg2://argus:argus@postgres:5432/argus
+      ARGUS_REDIS_URL: redis://redis:6379/0
+      ARGUS_STOCKFISH_PATH: /usr/games/stockfish
+      ARGUS_CORS_ORIGINS: '["http://localhost:3000", "http://localhost:3001"]'
+    ports:
+      - "${API_HOST_PORT:-8002}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Source mounts keep the dev container in sync with the working tree.
+      - ./apps/api/argus_api:/app/apps/api/argus_api:ro
+      - ./packages/argus/argus:/app/packages/argus/argus:ro
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    ports:
+      - "${WEB_HOST_PORT:-3001}:3000"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  redisdata:

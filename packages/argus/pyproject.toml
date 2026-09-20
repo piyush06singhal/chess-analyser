@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "argus"
+version = "0.1.0"
+description = "ARGUS Chess core library: chess core, analysis engine integration, AI agent foundation, and ML scaffolding."
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "python-chess>=1.999",
+    "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+ml = ["scikit-learn>=1.5"]
+dev = ["pytest>=8.0", "httpx>=0.27"]
+
+[tool.setuptools.packages.find]
+include = ["argus*"]

@@ -233,7 +233,9 @@ still requires the key.
 
 This serves the web app and the API on one origin, so the browser needs no CORS
 handling and never holds the key. `NEXT_PUBLIC_API_URL` is then the site's own
-`/api` prefix.
+**origin only** — the client appends `/api/...` itself
+(`apps/web/src/lib/api.ts`), so adding a `/api` suffix here would request
+`/api/api/games`.
 
 ```caddyfile
 app.example.com {
@@ -259,7 +261,14 @@ app.example.com {
 }
 ```
 
+The upstreams are the compose **service names**, so Caddy must share the compose
+network: add it as a service on that network, or run it on the host and replace
+them with the published loopback ports (`127.0.0.1:3000` and `127.0.0.1:8000`).
+Either way, Caddy issues and renews the TLS certificate automatically.
+`{$CAISSA_API_KEY}` is read from Caddy's own environment — give it the same value
+as one entry in `ARGUS_API_KEYS`.
+
 With this shape, set `ARGUS_CORS_ORIGINS=https://app.example.com` and
-`NEXT_PUBLIC_API_URL=https://app.example.com/api`. Because the browser calls its
-own origin, CORS is not exercised at all — which removes an entire class of
+`NEXT_PUBLIC_API_URL=https://app.example.com`. Because the browser calls its own
+origin, CORS is not exercised at all — which removes an entire class of
 deployment failure (a preview URL missing from the allow-list).

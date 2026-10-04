@@ -99,7 +99,23 @@ jobs:
         working-directory: apps/web
         run: |
           npm ci --no-audit --no-fund
-          npm audit --audit-level=high
+          # The shipped dependency tree, which is the policy
+          # scripts/audit_dependencies.py already applies. A dev-only advisory is
+          # reported by the step below rather than blocking the build: braces has
+          # no patched release at all (GHSA-vfj7-8cjw-p6xm: affected <= 3.0.3,
+          # patched "none"), it is reachable only through eslint-config-next, and
+          # no part of that toolchain is in the runtime image. Trivy's
+          # ignore-unfixed covers the same class for containers.
+          npm audit --omit=dev --audit-level=high
+
+      - name: Frontend dev-toolchain advisories (reported, not blocking)
+        # Kept visible so an unpatchable dev dependency stays in the record and a
+        # *patched* one is obvious the moment the registry publishes a fix. It
+        # does not gate: none of these packages ship, so their presence is not a
+        # reason to stop a release.
+        working-directory: apps/web
+        continue-on-error: true
+        run: npm audit --audit-level=high
 
       - name: Secret, misconfiguration and vulnerability scan
         # Pinned by tag. v0.28.0 is broken: it references

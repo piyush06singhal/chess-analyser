@@ -18,6 +18,20 @@ fake pass).
 | Python deps | `python -m pip_audit` | **0 known vulnerabilities** (74 installed packages) |
 | Frontend production deps | `npm audit --omit=dev` | **0 vulnerabilities** |
 | Frontend full tree | `npm audit` | 5 high — all in the ESLint dev toolchain (`eslint-config-next` → `@next/eslint-plugin-next` → `fast-glob` → `micromatch` → `braces`); not shipped in the runtime image |
+
+The CI `security` job enforces the same split as the table above: the shipped
+tree (`npm audit --omit=dev`) **blocks** the build, and the full tree is printed
+by a separate non-blocking step so an unpatchable dev finding stays in the record
+and a patched one becomes obvious the moment a fix is published.
+
+**`braces` has no patch to apply.** GHSA-vfj7-8cjw-p6xm (CVE-2026-93687) lists
+affected versions `<= 3.0.3` and patched versions **none**; 3.0.3 is the newest
+release on the registry. It is a stack-exhaustion DoS that needs a deeply nested
+brace pattern supplied to a glob, and the only path to it here is
+`eslint-config-next` while linting, from developer-authored patterns — not from
+user input, and not from the runtime image at all. Recorded as **accepted
+residual risk**, and handled the same way Trivy's `ignore-unfixed` handles the
+container findings below.
 | Container images | `docker scout cves local://<image>` | web **0 critical / 0 high**; api **0 critical / 3 high** — see below |
 
 ### Container findings (measured, not estimated)

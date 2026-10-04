@@ -68,9 +68,13 @@ a credential.
 
 ## Supply chain
 
-* The CI `security` job runs `pip-audit` (Python), `npm audit` (frontend) and
-  Trivy (filesystem: vulnerabilities, secrets, misconfiguration), failing on
-  HIGH/CRITICAL.
+* The CI `security` job runs `pip-audit` (Python), `npm audit --omit=dev`
+  (the frontend tree that ships) and Trivy (filesystem: vulnerabilities, secrets,
+  misconfiguration), failing on HIGH/CRITICAL. The frontend's full tree is
+  reported by a non-blocking step as well, because a dev-only advisory with no
+  published patch should be visible without stopping a release; the reason it is
+  not gating is recorded in
+  [../release/security-report.md](../release/security-report.md).
 * Container base images are pinned by digest (see
   [containerization.md](containerization.md)).
 * Secrets are environment-only; no key is hardcoded, and the secret scanner fails

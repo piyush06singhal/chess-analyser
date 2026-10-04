@@ -12,7 +12,7 @@ uses phase-based versioning rather than SemVer.
 
 ### Continuous integration (the first real GitHub Actions run)
 
-The workflow had only ever been read, not run. Its first run on GitHub found four
+The workflow had only ever been read, not run. Its first run on GitHub found six
 defects that never appeared locally, and one product bug that only appears under
 load. All are fixed.
 
@@ -20,11 +20,23 @@ load. All are fixed.
 generated into `.next/types`, which is gitignored, and CI type-checked before it
 built. `npx next typegen` now runs first, so type-check no longer depends on
 build order (reproduced locally: the same error and exit code as CI, then clean).
-- **`security`: the job died during setup, before scanning anything.**
-`aquasecurity/trivy-action@v0.28.0` references `aquasecurity/setup-trivy@v0.2.1`,
-a tag that was never published, so the action could not resolve. Pinned to
-`v0.36.0`, which pins that dependency by commit SHA instead. The Trivy DB is still
-downloaded at run time, so this pins the wrapper, not the vulnerability data.
+- **`security`: two independent failures, both found only by running it.**
+  - *It died during setup, before scanning anything.*
+    `aquasecurity/trivy-action@v0.28.0` references
+    `aquasecurity/setup-trivy@v0.2.1`, a tag that was never published, so the
+    action could not resolve. Pinned to `v0.36.0`, which pins that dependency by
+    commit SHA instead. The Trivy DB is still downloaded at run time, so this
+    pins the wrapper, not the vulnerability data.
+  - *Then it gated the npm audit on the wrong tree.* It failed on an advisory in
+    the ESLint dev toolchain — `braces`, reached only through `eslint-config-next`,
+    which is not in the runtime image — and it has **no patch to apply**:
+    GHSA-vfj7-8cjw-p6xm lists affected versions `<= 3.0.3` and patched versions
+    *none*, and 3.0.3 is the newest release on the registry. The gate now matches
+    the policy `scripts/audit_dependencies.py` already documented — audit the
+    **shipped** tree (`npm audit --omit=dev`: 0 vulnerabilities) — while a separate
+    non-blocking step keeps the full tree visible, so an unpatchable dev finding
+    stays in the record and a patched one is obvious as soon as a fix ships. This
+    is the same treatment Trivy's `ignore-unfixed` already gives the containers.
 - **`backend`: 45+ failures from a missing engine.** The suite is engine-free *by
 policy* — `run_evaluation.py --no-engine` and `pytest -m "not engine"` — but
 several tests that are not engine-marked drive a real analysis run (import →

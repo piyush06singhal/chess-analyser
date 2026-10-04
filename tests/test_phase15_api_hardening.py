@@ -205,9 +205,33 @@ def test_authenticated_deployment_refuses_a_missing_key(monkeypatch) -> None:
     get_settings.cache_clear()
     try:
         with TestClient(app) as keyed:
-            assert keyed.get("/health").status_code == 401
-            ok = keyed.get("/health", headers={"X-API-Key": "secret"})
+            assert keyed.get("/api/games").status_code == 401
+            # /metrics is not a probe path, so it still proves the key works.
+            ok = keyed.get("/metrics", headers={"X-API-Key": "secret"})
             assert ok.status_code == 200
+    finally:
+        get_settings.cache_clear()
+
+
+def test_liveness_and_readiness_probes_need_no_key(monkeypatch) -> None:
+    """A healthcheck cannot present a credential, so these paths must not need one.
+
+    Requiring a key on them made every keyed deployment report *itself* unhealthy:
+    the Docker ``HEALTHCHECK``, the ``http_service.checks`` in ``fly.toml``, a
+    compose ``condition: service_healthy`` and an orchestrator's readiness probe
+    all issue a bare request and cannot add a header. The service was fine; the
+    probes were refused.
+    """
+    monkeypatch.setenv("ARGUS_API_KEYS", "secret:alice")
+    get_settings.cache_clear()
+    try:
+        with TestClient(app) as keyed:
+            for path in ("/health", "/ready", "/health/ready"):
+                assert keyed.get(path).status_code == 200, path
+            # The exemption is exactly these paths: operational counters stay
+            # keyed, and no data route is opened up by it.
+            assert keyed.get("/metrics").status_code == 401
+            assert keyed.get("/api/games").status_code == 401
     finally:
         get_settings.cache_clear()
 

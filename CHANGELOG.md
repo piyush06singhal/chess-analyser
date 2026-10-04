@@ -133,6 +133,25 @@ the pattern. Verified: 48/48 on the map spec (8 repeats × 3 engines) and the fu
   message before its results.
 
 ### Fixed
+- **A keyed deployment reported itself unhealthy.** With `ARGUS_API_KEYS` set —
+which production validation *requires* — authentication is applied in middleware,
+so `/health`, `/ready` and `/metrics` all answered **401**. A healthcheck cannot
+present a credential, so the Docker `HEALTHCHECK`, the `fly.toml`
+`http_service.checks`, a compose `condition: service_healthy` and any orchestrator
+readiness probe failed while the service was perfectly fine — the deployment
+could never pass a gate, and `scripts/system_check.py` failed against it.
+`/health`, `/ready` and `/health/ready` are now exempt
+(`UNAUTHENTICATED_PATHS`), binding the same local identity an open deployment
+uses so the probes are still metered, rate-limited and audited. They report
+dependency *state* and never user data; `/metrics` and every data route still
+require the key. Verified against a keyed server: probes 200 without a key,
+`/metrics` and `/api/games` 401 without it and 200 with it.
+
+  The related deployment reality is now written down in
+  [`docs/deployment.md`](docs/deployment.md): the browser client sends no
+  credential, so a web-accessible deployment is either **edge-gated** (a reverse
+  proxy injects the key; recommended until accounts land) or **public and open**.
+  The one-origin Caddy recipe there also removes CORS from the picture entirely.
 - **Opponent preparation returned HTTP 500** — `training_positions.data_source`
   was too narrow for `opponent_preparation`. Widened on fresh and existing
   databases; re-verified live (HTTP 200).

@@ -24,6 +24,20 @@ from argus_api.security import LOCAL_CALLER, authenticate, is_open
 REQUEST_ID_HEADER = "X-Request-ID"
 MAX_REQUEST_ID_LENGTH = 128
 
+#: Liveness and readiness paths that must answer without a credential.
+#:
+#: A healthcheck cannot present a key: the Docker ``HEALTHCHECK`` in
+#: ``docker/Dockerfile.api``, the ``http_service.checks`` in ``fly.toml``, a
+#: compose ``condition: service_healthy`` and an orchestrator's readiness probe
+#: all issue a bare request. Requiring a key on these paths made every keyed
+#: deployment report itself unhealthy and never pass a gate — the probes failed
+#: while the service was fine. They reveal dependency *state*, never user data:
+#: no caller, no game, no credential is named in the response.
+#:
+#: ``/metrics`` is deliberately NOT here. A scraper can send a header, and the
+#: counters are operational detail rather than public information.
+UNAUTHENTICATED_PATHS = frozenset({"/health", "/ready", "/health/ready"})
+
 
 def _request_id_from(request: Request) -> str:
     proposed = request.headers.get(REQUEST_ID_HEADER)
@@ -57,19 +71,28 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         # Resolve the caller. In open mode this is always the local caller and
         # cannot fail; in keyed mode an invalid key is refused here, centrally,
         # rather than in every route.
-        try:
-            caller, role = authenticate(request)
-        except Exception as exc:  # noqa: BLE001 — ArgusError subclasses; handled centrally
-            from argus.shared.errors import ArgusError
+        #
+        # A liveness or readiness probe is answered without a credential (see
+        # UNAUTHENTICATED_PATHS). It binds the same local identity an open
+        # deployment would, so the probe is still metered, rate-limited and
+        # audited, and the rest of the pipeline — security headers, size limits,
+        # metrics — runs exactly as it does for an authenticated request.
+        if request.url.path in UNAUTHENTICATED_PATHS:
+            caller, role = LOCAL_CALLER, "operator"
+        else:
+            try:
+                caller, role = authenticate(request)
+            except Exception as exc:  # noqa: BLE001 — ArgusError subclasses; handled centrally
+                from argus.shared.errors import ArgusError
 
-            if isinstance(exc, ArgusError):
-                status = 401 if exc.code == "unauthorized" else 500
-                return JSONResponse(
-                    status_code=status,
-                    content={"error": {**exc.to_dict(), "request_id": request_id}},
-                    headers={REQUEST_ID_HEADER: request_id},
-                )
-            raise
+                if isinstance(exc, ArgusError):
+                    status = 401 if exc.code == "unauthorized" else 500
+                    return JSONResponse(
+                        status_code=status,
+                        content={"error": {**exc.to_dict(), "request_id": request_id}},
+                        headers={REQUEST_ID_HEADER: request_id},
+                    )
+                raise
         set_caller_id(caller)
         request.state.caller_id = caller
         request.state.caller_role = role

@@ -192,3 +192,74 @@ background analysis runner and clock sweeper stop), do not host long-lived
 WebSockets, and cap execution at 60 s (300 s on Pro) — all of which the API
 depends on. Moving the API onto Vercel would mean re-architecting analysis, live
 play and real-time updates; the split above needs no code change.
+
+## Access control, probes and the browser
+
+Two facts decide how a deployment can be reached, and they pull in opposite
+directions:
+
+* **Production requires `ARGUS_API_KEYS`.** `scripts/validate_config.py` refuses
+  an open deployment, and when keys are set the API requires `X-API-Key` (or
+  `Authorization: Bearer <key>`) on every request.
+* **The browser client sends no credential.** There is no `NEXT_PUBLIC_API_KEY`,
+  because a key shipped in a browser bundle is not a secret — anyone who loads
+  the page has it.
+
+So a web-accessible deployment has exactly two honest shapes:
+
+| Shape | How it works | Who can reach it |
+| --- | --- | --- |
+| **Edge-gated** (recommended) | One origin: a reverse proxy terminates TLS, injects `X-API-Key`, and gates access (Cloudflare Access, basic auth, a VPN) | Only the people the gate admits |
+| **Public, open** | No gate; run with `ARGUS_ENV=staging` and no `ARGUS_API_KEYS` | Everyone with the URL |
+
+The first is the recommended shape until **accounts** land (see
+[`release/DEFERRED_WORK.md`](release/DEFERRED_WORK.md)): the proxy holds the key,
+the browser never sees it, and the deployment stays a valid `production`
+configuration. Be accurate about its strength — the key becomes a *shared*
+credential, so access control is exactly as strong as the gate in front of it.
+It is not per-user authentication.
+
+### Liveness and readiness are exempt from the key
+
+A healthcheck cannot present a credential: the Docker `HEALTHCHECK`, the
+`http_service.checks` in `fly.toml`, a compose `condition: service_healthy` and an
+orchestrator's readiness probe all issue a bare request. `/health`, `/ready` and
+`/health/ready` therefore answer without one (`UNAUTHENTICATED_PATHS` in
+`apps/api/argus_api/middleware.py`). They report dependency *state* and never user
+data. `/metrics` stays keyed — a scraper can send a header — and every data route
+still requires the key.
+
+### One-origin reverse proxy (Caddy)
+
+This serves the web app and the API on one origin, so the browser needs no CORS
+handling and never holds the key. `NEXT_PUBLIC_API_URL` is then the site's own
+`/api` prefix.
+
+```caddyfile
+app.example.com {
+    # Everything else is the Next.js app.
+    handle {
+        reverse_proxy web:3000
+    }
+
+    # The API, with the key injected server-side. A client-supplied key is
+    # replaced, never passed through.
+    handle /api/* {
+        reverse_proxy api:8000 {
+            header_up X-API-Key "{$CAISSA_API_KEY}"
+        }
+    }
+
+    # Probes need no key, and are useful to a load balancer in front of this.
+    handle /health*   { reverse_proxy api:8000 }
+    handle /ready*    { reverse_proxy api:8000 }
+
+    # Optional edge gate for the whole site:
+    # basic_auth { admin $2a$14$<bcrypt-hash> }
+}
+```
+
+With this shape, set `ARGUS_CORS_ORIGINS=https://app.example.com` and
+`NEXT_PUBLIC_API_URL=https://app.example.com/api`. Because the browser calls its
+own origin, CORS is not exercised at all — which removes an entire class of
+deployment failure (a preview URL missing from the allow-list).

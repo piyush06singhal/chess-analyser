@@ -10,6 +10,17 @@ uses phase-based versioning rather than SemVer.
 
 ## [Phase 17 / 1.0.0] — Final release candidate, verification & production sign-off
 
+### Documentation
+- **The README was rewritten as an overview rather than a manual.** It was 367
+  lines of prose that restated the design documents, with no visual structure and
+a stale test count (1584, when the suite was at 1599). It is now 231 lines built
+around aligned tables — capabilities as a single glance table, the layered
+architecture as a stage/responsibility table, the measured results as a
+verification table with the command behind each number, and the deferred work as
+an area/today/trigger table instead of twelve paragraphs. Real badges were added
+(CI, release, Python, Node, MIT) and the CI badge links to the workflow that now
+actually passes.
+
 ### Continuous integration (the first real GitHub Actions run)
 
 The workflow had only ever been read, not run. Its first run on GitHub found six

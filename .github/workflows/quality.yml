@@ -93,7 +93,11 @@ jobs:
           npm audit --audit-level=high
 
       - name: Secret, misconfiguration and vulnerability scan
-        uses: aquasecurity/trivy-action@0.28.0
+        # The tag is `v0.28.0` (leading `v`): `0.28.0` does not exist, so the
+        # action could not resolve and the whole security job failed to start.
+        # The Trivy DB is downloaded at run time, so this pin ages the wrapper,
+        # not the vulnerability data.
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           scan-type: fs
           scan-ref: .
@@ -118,6 +122,13 @@ jobs:
 
       - name: Install
         run: npm ci
+
+      # `LayoutProps` (used by app/layout.tsx) is generated into .next/types,
+      # which is gitignored. On a fresh checkout there is no build yet, so
+      # type-check would fail with "Cannot find name 'LayoutProps'". Generating
+      # the route types first keeps type-check independent of build order.
+      - name: Generate route types
+        run: npx next typegen
 
       - name: Type-check
         run: npx tsc --noEmit
@@ -158,9 +169,13 @@ jobs:
         working-directory: apps/web
         run: npm ci
 
-      - name: Install Playwright browser
+      # All three engines in playwright.config.ts (chromium, firefox, webkit)
+      # are installed: the suite claims cross-engine behaviour, so it must run
+      # there. Installing chromium alone makes firefox and webkit fail to launch
+      # and takes two thirds of the matrix with them.
+      - name: Install Playwright browsers
         working-directory: apps/web
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps
 
       - name: Build web
         working-directory: apps/web

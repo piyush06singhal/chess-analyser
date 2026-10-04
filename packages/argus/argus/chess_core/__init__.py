@@ -1,4 +1,4 @@
-"""ARGUS chess core: pure chess data handling (FEN, PGN, moves, positions).
+"""Caissa chess core: pure chess data handling (FEN, PGN, moves, positions).
 
 Deliberately free of engine, LLM, database, and UI logic so the rest of the
 platform consumes standardized chess data through clean interfaces.

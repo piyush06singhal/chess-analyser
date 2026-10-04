@@ -8,13 +8,20 @@ move there, and scholar's-mate-style positions yield mate scores.
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
-from argus.analysis.engine.base import MATE_SCORE_CEILING, compute_cp_loss, to_cp
-from argus.analysis.engine.stockfish import locate_stockfish
+from argus.analysis.engine.base import (
+    MATE_SCORE_CEILING,
+    PLAYED_EVAL_RESULTING_POSITION,
+    PLAYED_EVAL_SAME_SEARCH,
+    compute_cp_loss,
+    to_cp,
+)
+from argus.analysis.engine.stockfish import StockfishEngine, StockfishSettings, locate_stockfish
 from argus.shared.errors import InvalidFenError, InvalidMoveError
 
-from tests.conftest import START_FEN
 
 pytestmark = pytest.mark.engine
 
@@ -129,3 +136,77 @@ class TestAnalyzeGame:
         assert first.is_best_move is True
         # evaluation_after is the flipped perspective of the position after e4.
         assert first.evaluation_after_cp is not None
+
+    def test_played_move_inside_the_window_is_scored_by_the_same_search(self, engine):
+        from argus.chess_core.pgn import parse_first_game
+
+        # 1. e4 is the best move, so it is inside any MultiPV window and its
+        # score comes from the same search as the best line.
+        game = parse_first_game('[Event "Test"]\n[Result "*"]\n\n1. e4 e5 *')
+        first, second = engine.analyze_game(game, depth=6, multipv=2)
+        assert first.played_eval_source == PLAYED_EVAL_SAME_SEARCH
+        assert first.played_eval_cp is not None
+        # Its score is the best line's score, so there is nothing to lose.
+        assert first.centipawn_loss == 0
+        # 1...e5 is also a top-two reply, so it is exact as well.
+        assert second.played_eval_source == PLAYED_EVAL_SAME_SEARCH
+
+    def test_played_move_outside_the_window_falls_back_and_says_so(self, engine):
+        from argus.chess_core.pgn import parse_first_game
+
+        # 1. a4 is never a top-two move in the starting position.
+        game = parse_first_game('[Event "Test"]\n[Result "*"]\n\n1. a4 e5 *')
+        first = engine.analyze_game(game, depth=6, multipv=2)[0]
+        assert first.played_eval_source == PLAYED_EVAL_RESULTING_POSITION
+        assert first.played_eval_cp is not None
+        # The fallback score is the flip of the position after the move, which
+        # is what evaluation_after_cp already holds.
+        assert first.played_eval_cp == first.evaluation_after_cp
+
+    def test_every_played_move_records_where_its_score_came_from(self, engine):
+        from argus.chess_core.pgn import parse_first_game
+
+        game = parse_first_game(
+            '[Event "Test"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 *'
+        )
+        evaluations = engine.analyze_game(game, depth=6, multipv=2)
+        recorded = [e.played_eval_source for e in evaluations]
+        assert all(
+            source in (PLAYED_EVAL_SAME_SEARCH, PLAYED_EVAL_RESULTING_POSITION)
+            for source in recorded
+        )
+        assert recorded.count(PLAYED_EVAL_SAME_SEARCH) >= 1
+
+
+class TestEngineLatency:
+    """Guard the per-search latency floor the flush nudge imposes.
+
+    Stockfish block-buffers stdout on a pipe, so Caissa nudges the engine with a
+    harmless ``isready`` to flush pending output. The nudge interval is
+    therefore a floor on *every* search: while it was 0.5 s, a 33-move game paid
+    ~33 s of pure waiting. These tests keep the floor small.
+    """
+
+    def test_default_nudge_interval_is_small(self):
+        settings = StockfishSettings()
+        assert 0.0 < settings.flush_nudge_seconds <= 0.1
+        assert settings.describe()["flush_nudge_seconds"] == settings.flush_nudge_seconds
+
+    def test_shallow_search_does_not_pay_a_fixed_half_second(self):
+        if locate_stockfish() is None:
+            pytest.skip("Stockfish binary not available")
+        stockfish = StockfishEngine(
+            StockfishSettings(depth=4, multipv=1, timeout_seconds=30.0)
+        )
+        try:
+            stockfish.analyze_position(START_FEN_FORCED, depth=4, multipv=1)  # warm up
+            durations = []
+            for _ in range(5):
+                started = time.monotonic()
+                stockfish.analyze_position(START_FEN_FORCED, depth=4, multipv=1)
+                durations.append(time.monotonic() - started)
+        finally:
+            stockfish.close()
+        # A depth-4 search is milliseconds of work; anything near the old 0.5 s
+        # floor means the nudge interval regressed.
+        assert min(durations) < 0.25, durations

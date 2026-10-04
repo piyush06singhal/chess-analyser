@@ -1,4 +1,4 @@
-"""Structured logging configuration for ARGUS Chess.
+"""Structured logging configuration for Caissa.
 
 Supports human-readable (default) and JSON output selected via configuration.
 All packages log through :func:`get_logger` so formatting stays consistent.

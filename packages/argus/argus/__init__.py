@@ -1,4 +1,4 @@
-"""ARGUS Chess core library.
+"""Caissa core library.
 
 Packages:
 - ``argus.shared``      — cross-cutting errors and logging
@@ -12,4 +12,7 @@ Design rule: deterministic chess analysis (engine + features) is kept strictly
 separate from probabilistic AI functionality (LLM/ML).
 """
 
-__version__ = "0.1.0"
+#: The Caissa release version of the core library, kept in lockstep with the
+#: repository ``VERSION`` file. Subsystem methodology versions (analysis,
+#: player profile, graph, …) are separate and version what a *symbol means*.
+__version__ = "1.0.0"

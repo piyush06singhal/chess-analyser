@@ -1,0 +1,20 @@
+# Ruff — static correctness checks for the Python tree.
+#
+# The selection is deliberately narrow. `F` (pyflakes) and `E9` (syntax) catch
+# real defects — an undefined name, a redefined import, an unused local that
+# hides a missing use — without imposing a formatting style that would bury a
+# review in noise. When this was first run it found four genuine undefined-name
+# bugs (an unreachable training response, a dead importer helper, a wrong return
+# annotation, a duplicated schema class); that is the reason it exists.
+#
+# Run it with:  .venv/bin/python -m ruff check packages apps scripts tests
+
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = ["F", "E9"]
+
+[lint.per-file-ignores]
+# Re-export facades legitimately import names for their callers; the names are
+# listed in `__all__`, which ruff already respects, so nothing extra is needed.

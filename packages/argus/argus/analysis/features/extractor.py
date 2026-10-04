@@ -107,6 +107,15 @@ def _pawn_files(board: chess.Board, color: chess.Color) -> dict[int, list[int]]:
     return files
 
 
+def pawn_file_map(board: chess.Board, color: chess.Color) -> dict[int, list[int]]:
+    """Public accessor: map file -> ranks of the side's pawns.
+
+    Exposed so the game-intelligence layer can reuse the exact same pawn-file
+    logic instead of re-deriving it (single source of pawn-structure truth).
+    """
+    return _pawn_files(board, color)
+
+
 def _isolated_pawns(pawn_files: dict[int, list[int]]) -> int:
     return sum(
         1

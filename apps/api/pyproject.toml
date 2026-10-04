@@ -1,17 +1,22 @@
 [project]
 name = "argus-api"
-version = "0.1.0"
-description = "ARGUS Chess API service (FastAPI)."
+version = "1.0.0"
+description = "Caissa API service (FastAPI)."
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
+    "python-multipart>=0.0.9",
     "uvicorn[standard]>=0.30",
     "sqlalchemy>=2.0",
     "asyncpg>=0.29",
     "psycopg2-binary>=2.9",
     "pydantic-settings>=2.3",
-    "argus>=0.1.0",
+    "argus>=1.0.0",
 ]
+
+[project.scripts]
+# The operator CLI (Phase 15 §43): `argus config validate --environment <env>`.
+argus = "argus_api.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["argus_api*"]

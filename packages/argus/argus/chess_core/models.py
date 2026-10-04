@@ -29,6 +29,22 @@ class Color(str, Enum):
     BLACK = "black"
 
 
+class AnalysisStatus(str, Enum):
+    """Canonical lifecycle state of a game's analysis.
+
+    The backend is the single source of truth for this value; the frontend
+    never guesses whether analysis exists. Transitions:
+    IMPORTED -> READY -> ANALYZING -> ANALYZED, or ANY -> FAILED.
+    """
+
+    IMPORTED = "imported"
+    VALIDATING = "validating"
+    READY = "ready"
+    ANALYZING = "analyzing"
+    ANALYZED = "analyzed"
+    FAILED = "failed"
+
+
 class PlayerInfo(BaseModel):
     """Player identity from PGN headers."""
 
@@ -47,9 +63,10 @@ class TimeControlInfo(BaseModel):
 class OpeningInfo(BaseModel):
     """Opening metadata.
 
-    Phase 1: detected from PGN headers when present. Opening detection from
-    the move sequence itself is a placeholder for the analysis phase — the
-    ``source`` field distinguishes the two once a detector exists.
+    Two sources feed this: PGN headers when present, and the move-sequence
+    detector in :mod:`argus.intelligence.openings` (which matches against the
+    curated opening table and reports the deviation point). The ``source`` field
+    distinguishes which one produced a given value.
     """
 
     eco_code: str | None = None
@@ -68,6 +85,31 @@ class GameMove(BaseModel):
     uci: str
     fen_before: str
     fen_after: str
+
+
+class GamePositionState(BaseModel):
+    """One position in the linear sequence of a game.
+
+    ``ply == 0`` is the initial position; ``ply == n`` is the position after
+    the n-th move. Every position carries enough data to rebuild the game
+    without re-parsing the PGN, and is directly consumable by the chess-engine
+    abstraction (the ``fen`` field is the canonical engine input).
+    """
+
+    game_id: str | None = None
+    ply: int = Field(ge=0, description="0 for the initial position, n after the n-th move")
+    move_number: int = Field(ge=1)
+    side_to_move: Color
+    fen: str
+    san: str | None = Field(default=None, description="SAN of the move leading here (None at the start)")
+    uci: str | None = None
+    previous_fen: str | None = None
+    resulting_fen: str
+    is_check: bool = False
+    is_checkmate: bool = False
+    is_stalemate: bool = False
+    is_terminal: bool = False
+    terminal_reason: str | None = None
 
 
 class Game(BaseModel):

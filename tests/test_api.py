@@ -14,10 +14,34 @@ ENGINE_MARK = pytest.mark.engine
 
 
 class TestHealth:
-    def test_liveness(self, client):
+    def test_readiness_reports_every_probe_it_promises(self, client):
+        """``/health/ready`` answers with real per-dependency probes.
+
+        The contract under test is the *shape* and the honesty of it, not a fixed
+        verdict: readiness depends on whether the engine binary is present in
+        this environment, so the test asserts that status agrees with the
+        ``blocking`` list rather than hard-coding "ready".
+        """
         response = client.get("/health/ready")
         assert response.status_code == 200
-        assert response.json() == {"status": "ready"}
+        body = response.json()
+        assert set(body["checks"]) == {
+            "database",
+            "redis",
+            "stockfish",
+            "engine_capacity",
+            "auth",
+            "migrations",
+            "ml_registry",
+            "ai_provider",
+        }
+        assert body["status"] in {"ready", "degraded"}
+        assert body["status"] == ("ready" if not body["blocking"] else "degraded")
+        # Only the database and the engine can block serving.
+        assert set(body["blocking"]) <= {"database", "stockfish"}
+        assert body["checked_at"]
+        # ``/ready`` is the same probe under its canonical name.
+        assert client.get("/ready").json()["checks"].keys() == body["checks"].keys()
 
     @ENGINE_MARK
     def test_health_reports_dependencies_honestly(self, client):
@@ -110,9 +134,7 @@ class TestGameImportAndAnalysis:
         body = response.json()
         assert body["moves"] == 33
         assert body["analyzed"] is True
-        assert body["analysis"] is not None
-        assert body["report"] is not None
-        assert body["report"]["summary"]["total_moves"] == 33
+        assert body["analysis_status"] == "analyzed"
         assert body["engine"]["available"] is True
         game_id = body["game_id"]
         assert game_id
@@ -123,14 +145,21 @@ class TestGameImportAndAnalysis:
         assert detail.json()["white_player"] == "Paul Morphy"
         assert len(detail.json()["moves"]) == 33
 
-        # Stored analyses exist after import.
-        stored = client.get(f"/api/analysis/{game_id}")
-        assert stored.status_code == 200
-        assert stored.json()["positions_analyzed"] == 33
+        # Import runs the *same* Phase 3 pipeline as every other analysis, so the
+        # per-move rows that the report, training, scenarios and coaching surfaces
+        # resolve against are stored. Importing with analysis used to write only
+        # legacy position rows, which marked the game analysed while the stored
+        # report answered 409 "analysis required".
+        moves = client.get(f"/api/analysis/games/{game_id}/moves").json()
+        assert moves["count"] == 33
+        assert moves["analysis_complete"] is True
+        report = client.get(f"/api/intelligence/games/{game_id}/report")
+        assert report.status_code == 200
+        assert report.json()["report"]["context"]["white_player"] == "Paul Morphy"
 
-        # Re-running analysis through the dedicated endpoint works.
-        reanalysis = client.post("/api/analysis/game", json={"game_id": game_id, "depth": 6})
-        assert reanalysis.status_code == 200
+        # Re-running analysis through the canonical async endpoint works.
+        reanalysis = client.post(f"/api/analysis/games/{game_id}", json={"depth": 6})
+        assert reanalysis.status_code == 202
         assert reanalysis.json()["game_id"] == game_id
 
     def test_import_without_analysis_is_honest(self, client):
@@ -160,18 +189,18 @@ class TestGameImportAndAnalysis:
         assert response.json()["error"]["code"] == "not_found"
 
     def test_missing_analysis_has_honest_note(self, client):
-        # Import without analysis, then request stored analyses.
+        # Import without analysis, then read the per-move analysis every surface uses.
         imported = client.post(
             "/api/games/import", json={"pgn_text": OPERA_GAME_PGN, "run_analysis": False}
         )
         game_id = imported.json()["game_id"]
-        response = client.get(f"/api/analysis/{game_id}")
+        response = client.get(f"/api/analysis/games/{game_id}/moves")
         assert response.status_code == 200
         body = response.json()
-        assert body["positions_analyzed"] == 0
-        assert "No stored analysis" in body["note"]
+        assert body["count"] == 0
+        assert body["analysis_version"] is None
 
     @ENGINE_MARK
     def test_analysis_of_unknown_game_maps_to_404(self, client):
-        response = client.post("/api/analysis/game", json={"game_id": "missing"})
+        response = client.post("/api/analysis/games/missing", json={})
         assert response.status_code == 404

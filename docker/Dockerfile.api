@@ -1,31 +1,64 @@
-# ARGUS Chess — backend API container.
-# Installs Stockfish from the Debian repositories; the application receives
-# its location through ARGUS_STOCKFISH_PATH (see docker-compose.yml).
-
-FROM python:3.12-slim AS runtime
+# Caissa — backend API container.
+#
+# Installs Stockfish from the Debian repositories; the application receives its
+# location through ARGUS_STOCKFISH_PATH (see docker-compose.yml).
+#
+# Hardened for production (Phase 15 §3):
+#   * the base image is pinned by digest, so a rebuild cannot silently pull a
+#     different toolchain;
+#   * the process runs as an unprivileged user (uid 10001), never root;
+#   * no build toolchain is left in the runtime image beyond what the Python
+#     wheels need;
+#   * a real HEALTHCHECK hits /health.
+#
+# Build the digest-pinned reference with:
+#   docker pull python:3.12-slim
+#   docker inspect --format='{{index .RepoDigests 0}}' python:3.12-slim
+FROM python:3.12-slim@sha256:dddfd7e07f9d15aeeca61529320492139d21cac7f0070c00609243e51e4e0016 AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Stockfish + build tools for the Python dependencies that need them.
+# Stockfish + curl for the healthcheck. The build toolchain is not needed: every
+# Python dependency ships a manylinux wheel for this base.
+#
+# `apt-get upgrade` applies the Debian security updates published for this base
+# digest (the base image is pinned, but the package mirror is not frozen, so an
+# up-to-date build picks up the patches that exist). Residual CVEs with no
+# upstream fix are reported in docs/release/security-report.md rather than
+# hidden.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends stockfish curl \
+    && apt-get upgrade -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
+
+# An unprivileged user owns the application directory. The data directory is a
+# volume the app writes to (models), so it is created and chowned before the
+# user is dropped.
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin argus \
+    && mkdir -p /app/data \
+    && chown -R argus:argus /app
 
 WORKDIR /app
 
-# Install packages first for better layer caching.
+# Install packages first for better layer caching. The [ml] extra brings in
+# scikit-learn for the guarded training pipelines. The package source is
+# copied BEFORE `pip install -e` so setuptools' editable finder records the
+# modules (installing from a pyproject-only directory yields a broken mapping).
 COPY packages/argus/pyproject.toml packages/argus/README.md* /app/packages/argus/
 COPY packages/argus/argus /app/packages/argus/argus
 COPY apps/api/pyproject.toml /app/apps/api/
-RUN pip install --no-cache-dir -e /app/packages/argus && pip install --no-cache-dir -e /app/apps/api
-
 COPY apps/api/argus_api /app/apps/api/argus_api
+RUN pip install --no-cache-dir -e "/app/packages/argus[ml]" \
+    && pip install --no-cache-dir -e /app/apps/api
 
 ENV ARGUS_STOCKFISH_PATH=/usr/games/stockfish \
     ARGUS_API_HOST=0.0.0.0 \
     ARGUS_API_PORT=8000
+
+# Drop privileges for everything that follows.
+USER argus
 
 EXPOSE 8000
 

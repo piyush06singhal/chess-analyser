@@ -67,3 +67,27 @@ class EvaluationMetrics(BaseModel):
     metrics: dict[str, float]
     dataset_rows: int
     dataset_split: str = Field(description="'validation' or 'test'")
+
+
+class ModelStatus(str, Enum):
+    """Lifecycle state of a model, in increasing order of exposure.
+
+    Only ``PRODUCTION`` may answer a user-facing prediction. The states exist so
+    that "this model exists" and "this model may be shown to a person" are two
+    different facts — a model that has been trained but not gated is
+    ``EXPERIMENTAL`` no matter how good its numbers look.
+    """
+
+    EXPERIMENTAL = "experimental"
+    VALIDATED = "validated"
+    PRODUCTION = "production"
+    RETIRED = "retired"
+
+
+class BaselineKind(str, Enum):
+    """A baseline whose job is to be beaten, not to be shipped."""
+
+    MAJORITY_CLASS = "majority_class"
+    RATING_BASED = "rating_based"
+    LOGISTIC_REGRESSION = "logistic_regression"
+    TREE_ENSEMBLE = "tree_ensemble"

@@ -1,0 +1,148 @@
+# Caissa — production deployment.
+#
+#   docker compose -f docker-compose.production.yml up -d
+#
+# Differences from the development compose file, on purpose (§3, §5):
+#   * no source bind-mounts — the image is the artifact, not the working tree;
+#   * the API runs with the settings from the environment (secrets injected by
+#     the platform), not from a committed file;
+#   * CPU/memory limits on every service so one runaway analysis cannot take
+#     the host down;
+#   * PostgreSQL is not published on a host port (it is reachable only on the
+#     compose network), and Redis requires a password;
+#   * restart policies and healthchecks gate startup order.
+#
+# Validate the environment before bringing this up:
+#   ARGUS_ENV=production python scripts/validate_config.py --environment production
+
+name: argus-chess
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: argus_placeholder
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: argus
+    # No host port: the database is reachable only inside the compose network.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U argus -d argus"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command:
+      - redis-server
+      - --requirepass
+      - "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+      - --maxmemory
+      - "${REDIS_MAXMEMORY:-512mb}"
+      - --maxmemory-policy
+      - allkeys-lru
+      - --appendonly
+      - "no"
+      - --save
+      - ""
+      - --rename-command
+      - "FLUSHALL"
+      - ""
+      - --rename-command
+      - "CONFIG"
+      - ""
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 768m
+
+  api:
+    image: argus-chess-api:${ARGUS_VERSION:-1.0.0}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+      labels:
+        org.opencontainers.image.title: "Caissa API"
+        org.opencontainers.image.version: "${ARGUS_VERSION:-1.0.0}"
+    restart: always
+    environment:
+      ARGUS_ENV: production
+      ARGUS_LOG_LEVEL: ${ARGUS_LOG_LEVEL:-INFO}
+      ARGUS_LOG_FORMAT: json
+      ARGUS_DATABASE_URL: postgresql+psycopg2://argus:${POSTGRES_PASSWORD}@postgres:5432/argus
+      ARGUS_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      ARGUS_STOCKFISH_PATH: /usr/games/stockfish
+      ARGUS_CORS_ORIGINS: ${ARGUS_CORS_ORIGINS:?ARGUS_CORS_ORIGINS is required}
+      ARGUS_API_KEYS: ${ARGUS_API_KEYS:?ARGUS_API_KEYS is required in production}
+      ARGUS_FEATURE_FLAGS: ${ARGUS_FEATURE_FLAGS:-}
+      ARGUS_ENGINE_MAX_CONCURRENCY: ${ARGUS_ENGINE_MAX_CONCURRENCY:-2}
+      ARGUS_ANALYSIS_QUEUE_LIMIT: ${ARGUS_ANALYSIS_QUEUE_LIMIT:-64}
+      ARGUS_LLM_PROVIDER: ${ARGUS_LLM_PROVIDER:-}
+      ARGUS_LLM_MODEL: ${ARGUS_LLM_MODEL:-}
+      ARGUS_LLM_API_KEY: ${ARGUS_LLM_API_KEY:-}
+      ARGUS_LLM_BASE_URL: ${ARGUS_LLM_BASE_URL:-}
+      ARGUS_MODELS_DIR: /app/data/models
+    ports:
+      - "${API_HOST_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+
+  web:
+    image: argus-chess-web:${ARGUS_VERSION:-1.0.0}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
+      labels:
+        org.opencontainers.image.title: "Caissa Web"
+        org.opencontainers.image.version: "${ARGUS_VERSION:-1.0.0}"
+    restart: always
+    environment:
+      NODE_ENV: production
+      # Baked into the browser bundle at build time (NEXT_PUBLIC_*), and used by
+      # server-side rendering inside the container via the compose service name.
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      API_INTERNAL_URL: http://api:8000
+    ports:
+      - "${WEB_HOST_PORT:-3000}:3000"
+    depends_on:
+      - api
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+
+volumes:
+  pgdata:

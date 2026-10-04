@@ -1,0 +1,52 @@
+# Caissa API on Fly.io — the container host for the backend when the web frontend
+# is served from Vercel (see docs/deployment.md, "Split deployment").
+#
+# The API is a long-lived process by design: it runs a background analysis
+# runner, an in-process clock sweeper and a WebSocket hub, and it executes a
+# Stockfish binary. None of those survive a serverless freeze, which is why the
+# backend is here and not on Vercel.
+#
+#   fly launch --no-deploy            # create the app, keep this file
+#   fly volumes create caissa_data --size 1
+#   fly secrets set ARGUS_DATABASE_URL=... ARGUS_REDIS_URL=... ARGUS_CORS_ORIGINS=... ARGUS_API_KEYS=...
+#   fly deploy
+
+app = "caissa-api"
+primary_region = "iad"
+
+[build]
+  dockerfile = "docker/Dockerfile.api"
+
+[env]
+  ARGUS_ENV = "production"
+  ARGUS_LOG_FORMAT = "json"
+  ARGUS_STOCKFISH_PATH = "/usr/games/stockfish"
+  ARGUS_API_HOST = "0.0.0.0"
+  ARGUS_API_PORT = "8000"
+  ARGUS_MODELS_DIR = "/app/data/models"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # Keep one machine running: background analysis and the clock sweeper need a
+  # live process, and a cold start would drop an in-flight live game.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  # Analysis is CPU-bound; 2 shared CPUs keep one game responsive under load.
+  size = "shared-cpu-2x"
+  memory = "2gb"
+
+[mounts]
+  # Persistent volume for the ML model store and any files written under /app/data.
+  source = "caissa_data"
+  destination = "/app/data"

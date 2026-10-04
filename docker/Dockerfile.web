@@ -1,31 +1,48 @@
-# ARGUS Chess — frontend container (multi-stage: build, then serve).
+# Caissa — frontend container (multi-stage: deps, build, minimal runtime).
+#
+# Hardened for production (Phase 15 §3): the base images are pinned by digest,
+# and the runtime process runs as the unprivileged `node` user rather than root.
+# The standalone output ships only the traced runtime files.
 
-FROM node:22-alpine AS builder
-
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS deps
 WORKDIR /app
-
 COPY apps/web/package.json apps/web/package-lock.json* ./
 RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
 COPY apps/web ./
 # The API base URL is baked in at build time; override with --build-arg.
-ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+# Must match the variable read by apps/web/src/lib/api.ts.
+ARG NEXT_PUBLIC_API_URL=http://localhost:8002
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} \
+    NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-FROM node:22-alpine AS runtime
-
-ENV NODE_ENV=production \
-    NEXT_TELEMETRY_DISABLED=1
-
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS runtime
 WORKDIR /app
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    HOSTNAME=0.0.0.0 \
+    PORT=3000
 
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/next.config.ts ./next.config.ts
+# Standalone output ships only the traced runtime files (no node_modules copy).
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+COPY --from=builder --chown=node:node /app/public ./public
+
+# The standalone server is run by `node` directly; npm, npx and corepack are not
+# needed at runtime, and the base image's bundled npm ships its own dependency
+# tree (pacote, sigstore, brace-expansion, …) that a container scanner flags as
+# HIGH. Removing them shrinks the shipped attack surface without affecting the
+# runtime. `node`, which we do need, stays.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+    /usr/local/lib/node_modules/corepack \
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+
+# The node image already provides an unprivileged `node` user.
+USER node
 
 EXPOSE 3000
-
-CMD ["npm", "start"]
+CMD ["node", "server.js"]

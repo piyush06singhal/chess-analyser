@@ -1,26 +1,1006 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ============================================================================
+   Caissa — design system v2
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+   Two real themes, one token set. Every colour is a semantic token defined for
+   the light theme below and overridden for the dark theme in the
+   `html[data-theme="dark"]` block. Components never branch on the theme: they
+   only use tokens and component classes, so both themes stay in sync and a
+   token change moves both at once.
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+   Rules this file follows, so pages never have to fight it:
+   - Surfaces use a visible, evenly spaced elevation ramp in BOTH themes; panels
+     read as panels instead of one flat wash.
+   - Every text token clears 4.5:1 on its own surface in both themes, muted
+     ones included. "Muted" here means *lower emphasis*, not *lower contrast*:
+     an unreadable label is not a design choice. (The lighter muted shades
+     mist-500/600/700 previously fell to ~2-4:1; they were darkened in light
+     and lightened in dark to clear AA.)
+   - Type has a real scale: nothing carrying information is smaller than 12px.
+   - Colour means something: one primary accent for actions and positive states,
+     violet as the secondary/AI signal, amber and rose only for uncertainty and
+     failure, sky for engine/measured data.
+   - Every interactive element has a visible focus ring.
+   ========================================================================== */
+
+@theme {
+  /* --- Light theme (default) --------------------------------------------- */
+  /* Surfaces: page → shell → panel → raised → inset, evenly spaced. */
+  --color-ink-950: #eef1f6;
+  --color-ink-900: #f7f9fc;
+  --color-ink-850: #ffffff;
+  --color-ink-800: #f4f6fa;
+  --color-ink-750: #e9edf4;
+  --color-ink-700: #dbe1ea;
+  --color-ink-600: #c3cbd8;
+  --color-ink-500: #9aa5b6;
+
+  /* Text */
+  --color-mist-50: #0b1220;
+  --color-mist-100: #16203a;
+  --color-mist-200: #2b3852;
+  --color-mist-300: #46536b;
+  --color-mist-400: #55627a;
+  --color-mist-500: #5c6981;
+  --color-mist-600: #636c85;
+  --color-mist-700: #666f88;
+
+  /* Board: same cool family as the charts, so the board belongs to the page. */
+  --color-board-light: #eef1f7;
+  --color-board-dark: #7b8aa3;
+
+  /* Signals. Chosen so each clears 4.5:1 both *as text* on the light surface
+     and *under white text* when used as a fill — the two requirements meet
+     around these luminances. */
+  --color-emerald-primary: #0b7a52;
+  --color-emerald-dim: #096b45;
+  --color-amber-primary: #8f5a06;
+  --color-rose-primary: #b52b47;
+  --color-sky-primary: #0a6da0;
+  --color-violet-primary: #6d4ad6;
+
+  /* Compatibility ramp: earlier components used Tailwind's default palette
+     names (text-emerald-300 and friends). They are mapped onto the semantic
+     tokens here, so those call sites become theme-correct in both themes
+     instead of washing out in light mode. `--color-emerald-primary` is
+     redefined per theme, so these follow automatically. */
+  --color-emerald-200: var(--color-emerald-primary);
+  --color-emerald-300: var(--color-emerald-primary);
+  --color-emerald-400: var(--color-emerald-primary);
+  --color-emerald-500: var(--color-emerald-primary);
+  --color-emerald-600: var(--color-emerald-dim);
+  --color-teal-300: var(--color-sky-primary);
+  --color-teal-400: var(--color-sky-primary);
+  --color-green-300: var(--color-emerald-primary);
+  --color-green-400: var(--color-emerald-primary);
+  --color-amber-200: var(--color-amber-primary);
+  --color-amber-300: var(--color-amber-primary);
+  --color-amber-400: var(--color-amber-primary);
+  --color-orange-300: var(--color-amber-primary);
+  --color-orange-400: var(--color-amber-primary);
+  --color-rose-200: var(--color-rose-primary);
+  --color-rose-300: var(--color-rose-primary);
+  --color-rose-400: var(--color-rose-primary);
+  --color-rose-500: var(--color-rose-primary);
+  --color-sky-300: var(--color-sky-primary);
+  --color-sky-400: var(--color-sky-primary);
+  --color-cyan-300: var(--color-sky-primary);
+  --color-cyan-400: var(--color-sky-primary);
+  --color-violet-300: var(--color-violet-primary);
+  --color-violet-400: var(--color-violet-primary);
+  --color-violet-500: var(--color-violet-primary);
+
+  /* Typography */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  /* Display serif for hero headlines (Fraunces, loaded in layout.tsx). */
+  --font-display: var(--font-fraunces), Georgia, "Times New Roman", serif;
+
+  /* Motion */
+  --animate-fade-up: fade-up 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-fade-in: fade-in 0.28s ease-out both;
+  --animate-slide-in: slide-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-pulse-soft: pulse-soft 2.4s ease-in-out infinite;
+  --animate-shimmer: shimmer 2.2s linear infinite;
+
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes slide-in {
+    from { opacity: 0; transform: translateX(-6px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes pulse-soft {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
+  @keyframes shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* --- Dark theme ---------------------------------------------------------- */
+
+html[data-theme="dark"] {
+  --color-ink-950: #06080e;
+  --color-ink-900: #0a0e16;
+  --color-ink-850: #141b2a;
+  --color-ink-800: #1b2433;
+  --color-ink-750: #232d40;
+  --color-ink-700: #333e54;
+  --color-ink-600: #44506a;
+  --color-ink-500: #63708b;
+
+  --color-mist-50: #f6f8fd;
+  --color-mist-100: #e3e9f4;
+  --color-mist-200: #c7d2e4;
+  --color-mist-300: #a5b2c9;
+  --color-mist-400: #a4b0c5;
+  --color-mist-500: #98a4ba;
+  --color-mist-600: #8e9ab0;
+  --color-mist-700: #8794a8;
+
+  --color-board-light: #e9edf5;
+  --color-board-dark: #55637d;
+
+  --color-emerald-primary: #34d99b;
+  --color-emerald-dim: #12a86f;
+  --color-amber-primary: #f5b52a;
+  --color-rose-primary: #fb6f89;
+  --color-sky-primary: #38bdf8;
+  --color-violet-primary: #a78bfa;
+
+  color-scheme: dark;
 }
+
+:root {
+  color-scheme: light;
+}
+
+/* ---- Base ---------------------------------------------------------------- */
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background:
+    radial-gradient(1100px 520px at 84% -14%, color-mix(in srgb, var(--color-emerald-primary) 12%, transparent), transparent 62%),
+    radial-gradient(920px 500px at 6% -10%, color-mix(in srgb, var(--color-violet-primary) 12%, transparent), transparent 60%),
+    radial-gradient(760px 420px at 50% 108%, color-mix(in srgb, var(--color-sky-primary) 7%, transparent), transparent 64%),
+    linear-gradient(180deg, var(--color-ink-900) 0%, var(--color-ink-950) 58%, var(--color-ink-950) 100%);
+  background-attachment: fixed;
+  color: var(--color-mist-100);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-emerald-primary) 32%, transparent);
+  color: var(--color-mist-50);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ink-600) transparent;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: var(--color-ink-600);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--color-ink-500); background-clip: padding-box; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+:focus-visible {
+  outline: 2px solid var(--color-emerald-primary);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* ---- Surfaces ------------------------------------------------------------ */
+
+.card {
+  position: relative;
+  background: var(--color-ink-850);
+  border: 1px solid var(--color-ink-700);
+  border-radius: 18px;
+  box-shadow: 0 1px 2px 0 color-mix(in srgb, var(--color-mist-50) 6%, transparent),
+    0 18px 40px -28px rgba(8, 12, 22, 0.45);
+}
+
+.card-hover {
+  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease,
+    background-color 0.18s ease;
+}
+.card-hover:hover {
+  border-color: color-mix(in srgb, var(--color-emerald-primary) 42%, var(--color-ink-500));
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px -14px color-mix(in srgb, var(--color-emerald-primary) 40%, transparent),
+    0 30px 60px -34px rgba(8, 12, 22, 0.55);
+}
+
+/* A panel is a card with a header, used for every data section. */
+.panel {
+  position: relative;
+  background: var(--color-ink-850);
+  border: 1px solid var(--color-ink-700);
+  border-radius: 18px;
+  box-shadow: 0 1px 2px 0 color-mix(in srgb, var(--color-mist-50) 5%, transparent),
+    0 22px 44px -34px rgba(8, 12, 22, 0.45);
+}
+
+.panel-header {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.15rem 1rem 1.35rem;
+  border-bottom: 1px solid var(--color-ink-700);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--color-emerald-primary) 8%, transparent), transparent 46%);
+  border-top-left-radius: 17px;
+  border-top-right-radius: 17px;
+}
+/* Accent rail: structure, not decoration — every panel is keyed the same way. */
+.panel-header::before {
+  content: "";
+  position: absolute;
+  left: 0.6rem;
+  top: 1.05rem;
+  bottom: 1.05rem;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--color-emerald-primary), color-mix(in srgb, var(--color-emerald-primary) 8%, transparent));
+}
+
+.panel-body { padding: 1.25rem; }
+
+.divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-ink-600), transparent);
+}
+
+/* ---- Type --------------------------------------------------------------- */
+
+.label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-mist-400);
+}
+
+.title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.022em;
+  color: var(--color-mist-50);
+}
+
+.subtitle {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--color-mist-300);
+}
+
+/* Type helpers: size and leading only, never colour — a size class must not
+   silently override the `text-mist-*` a component deliberately chose. */
+.text-body { font-size: 0.9375rem; line-height: 1.62; }
+.text-small { font-size: 0.8125rem; line-height: 1.55; }
+.text-meta { font-size: 0.75rem; line-height: 1.5; }
+/* 12px floor: the smallest text that carries information sits at exactly
+   0.75rem. Nothing below carries information. */
+.text-micro { font-size: 0.75rem; line-height: 1.5; }
+
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.text-gradient {
+  background: linear-gradient(96deg, var(--color-mist-50) 0%, var(--color-emerald-primary) 52%, var(--color-violet-primary) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Display type: the market chess sites lead with huge editorial headlines, so
+   hero headers get a real display face at display sizes — never used for body
+   or data, only the top of the page. */
+.display-hero {
+  font-family: var(--font-display);
+  font-weight: 640;
+  letter-spacing: -0.028em;
+  line-height: 1.04;
+  color: var(--color-mist-50);
+  font-variation-settings: "SOFT" 40, "WONK" 1, "opsz" 144;
+}
+
+.display-hero-xl {
+  font-size: clamp(2.35rem, 4.6vw, 3.7rem);
+}
+
+.display-hero-lg {
+  font-size: clamp(1.85rem, 3.4vw, 2.8rem);
+}
+
+.display-hero-md {
+  font-size: clamp(1.5rem, 2.4vw, 2.1rem);
+}
+
+/* Verdict stage: the report's opening move — a full-bleed cinematic band that
+   carries the measured verdict, the headline numbers, and the move-quality
+   comparison in one look. Dark vignette + chessboard whisper keep the type
+   readable on both themes; the content itself is all measured data. */
+.verdict-stage {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--color-ink-600) 70%, transparent);
+  background:
+    radial-gradient(900px 360px at 12% 0%, color-mix(in srgb, var(--color-emerald-primary) 16%, transparent), transparent 60%),
+    radial-gradient(760px 340px at 88% 110%, color-mix(in srgb, var(--color-violet-primary) 15%, transparent), transparent 58%),
+    repeating-conic-gradient(
+      color-mix(in srgb, var(--color-mist-50) 4.5%, transparent) 0% 25%,
+      transparent 0% 50%
+    ) var(--color-ink-950);
+  background-size: auto, auto, 88px 88px;
+  box-shadow: 0 30px 70px -38px rgba(4, 8, 16, 0.75);
+  isolation: isolate;
+}
+
+.verdict-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-emerald-primary);
+}
+
+.verdict-headline {
+  font-family: var(--font-display);
+  font-weight: 640;
+  letter-spacing: -0.025em;
+  line-height: 1.06;
+  font-size: clamp(2rem, 3.8vw, 3.1rem);
+  color: var(--color-mist-50);
+  font-variation-settings: "SOFT" 40, "WONK" 1, "opsz" 144;
+}
+
+.verdict-sub {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--color-mist-300);
+  max-width: 62ch;
+}
+
+/* Big measured numbers that anchor the verdict row. */
+.verdict-number {
+  font-family: var(--font-display);
+  font-size: clamp(1.9rem, 3vw, 2.5rem);
+  font-weight: 620;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--color-mist-50);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A button in the reference style: full-pill, generous padding, gradient sheen
+   for the primary action. Sizes keep all text at 12px or larger. */
+.btn-pill {
+  border-radius: 999px;
+  padding: 0.65rem 1.35rem;
+  font-size: 0.875rem;
+}
+
+.btn-pill-lg {
+  border-radius: 999px;
+  padding: 0.8rem 1.7rem;
+  font-size: 0.9375rem;
+}
+
+/* Shared quiet page header: an eyebrow (which section of the product you are
+   in), a normal-weight title, one line of purpose. Used by every page so
+   headers never compete with the report's verdict stage. */
+.eyebrow {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-mist-400);
+}
+
+/* The report reads as one continuous document: a numbered chapter strip that
+   sticks under the nav while the chapters scroll past. */
+.chapter-strip {
+  position: sticky;
+  top: 4.9rem;
+  z-index: 20;
+  background: color-mix(in srgb, var(--color-ink-900) 88%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.chapter-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-ink-600);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1;
+  color: var(--color-mist-400);
+  transition: inherit;
+}
+.tab-active .chapter-num {
+  border-color: color-mix(in srgb, var(--color-emerald-primary) 55%, transparent);
+  color: var(--color-emerald-primary);
+}
+
+/* Chapter tabs render their number badge in the active accent; inactive tabs
+   keep the neutral badge. Applied via .chapter-tab in Tabs. */
+.tab.chapter-tab .badge {
+  border-color: var(--color-ink-600);
+  background: var(--color-ink-800);
+  color: var(--color-mist-400);
+}
+.tab.chapter-tab.tab-active .badge {
+  border-color: color-mix(in srgb, var(--color-emerald-primary) 55%, transparent);
+  background: color-mix(in srgb, var(--color-emerald-primary) 12%, var(--color-ink-850));
+  color: var(--color-emerald-primary);
+}
+
+/* ---- Controls ----------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 11px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  padding: 0.55rem 1rem;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease,
+    box-shadow 0.16s ease, transform 0.16s ease;
+  cursor: pointer;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-primary {
+  background: linear-gradient(180deg, var(--color-emerald-primary), var(--color-emerald-dim));
+  color: #ffffff;
+  box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.24) inset,
+    0 10px 24px -14px color-mix(in srgb, var(--color-emerald-primary) 85%, transparent);
+}
+html[data-theme="dark"] .btn-primary { color: #04231a; }
+.btn-primary:hover:not(:disabled) { filter: brightness(1.05); }
+
+.btn-ghost {
+  background: var(--color-ink-800);
+  border-color: var(--color-ink-600);
+  color: var(--color-mist-100);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--color-ink-750);
+  border-color: var(--color-ink-500);
+  color: var(--color-mist-50);
+}
+
+/* Square icon button, used for board and header controls. */
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 11px;
+  border: 1px solid var(--color-ink-600);
+  background: var(--color-ink-800);
+  color: var(--color-mist-200);
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+.btn-icon:hover:not(:disabled) {
+  background: var(--color-ink-750);
+  border-color: var(--color-ink-500);
+  color: var(--color-mist-50);
+}
+.btn-icon:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-icon-sm { width: 1.9rem; height: 1.9rem; border-radius: 9px; }
+
+.btn-danger {
+  background: color-mix(in srgb, var(--color-rose-primary) 14%, transparent);
+  border-color: color-mix(in srgb, var(--color-rose-primary) 40%, transparent);
+  color: var(--color-rose-primary);
+}
+.btn-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--color-rose-primary) 22%, transparent); }
+
+.input {
+  width: 100%;
+  background: var(--color-ink-800);
+  border: 1px solid var(--color-ink-600);
+  border-radius: 11px;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.9375rem;
+  color: var(--color-mist-50);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+}
+.input::placeholder { color: var(--color-mist-500); }
+.input:focus {
+  outline: none;
+  border-color: var(--color-emerald-primary);
+  background: var(--color-ink-850);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-emerald-primary) 22%, transparent);
+}
+select.input { cursor: pointer; }
+
+/* Native select, dressed to match .input. `appearance: none` plus a token-drawn
+   chevron keeps it identical in both themes instead of leaving the OS widget
+   (which ignores the palette) in the middle of a panel. */
+.select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--color-ink-800);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  border: 1px solid var(--color-ink-600);
+  border-radius: 11px;
+  padding: 0.6rem 2.25rem 0.6rem 0.85rem;
+  font-size: 0.9375rem;
+  color: var(--color-mist-50);
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+}
+.select:hover { border-color: var(--color-ink-500); }
+.select:focus {
+  outline: none;
+  border-color: var(--color-emerald-primary);
+  background-color: var(--color-ink-850);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-emerald-primary) 22%, transparent);
+}
+.select option {
+  background: var(--color-ink-850);
+  color: var(--color-mist-50);
+}
+
+/* A labelled field: the caption stacked over its control. */
+.field { display: block; }
+.field > .label { display: block; margin-bottom: 0.35rem; }
+
+/* Inline accent link used in body copy. */
+.link {
+  color: var(--color-emerald-primary);
+  font-weight: 600;
+  text-underline-offset: 3px;
+}
+.link:hover { text-decoration: underline; }
+
+/* ---- Chips, badges, tabs ------------------------------------------------ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+
+.badge-source {
+  background: var(--color-ink-800);
+  border-color: var(--color-ink-600);
+  color: var(--color-mist-300);
+  cursor: help;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-ink-600);
+  background: var(--color-ink-800);
+  color: var(--color-mist-200);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 0.32rem 0.8rem;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+.chip:hover { border-color: var(--color-ink-500); color: var(--color-mist-50); }
+.chip-active {
+  background: color-mix(in srgb, var(--color-emerald-primary) 14%, var(--color-ink-850));
+  border-color: color-mix(in srgb, var(--color-emerald-primary) 55%, transparent);
+  /* The dim shade, not `primary`: on the tinted fill the primary emerald falls
+     to ~4.3:1, just under AA. */
+  color: var(--color-emerald-dim);
+}
+
+/* Segmented tab strip used to keep long pages navigable. */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.3rem;
+  border-radius: 14px;
+  border: 1px solid var(--color-ink-700);
+  background: var(--color-ink-800);
+}
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 10px;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-mist-400);
+  cursor: pointer;
+  transition: all 0.16s ease;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.tab:hover { color: var(--color-mist-100); background: var(--color-ink-750); }
+.tab-active {
+  color: var(--color-mist-50);
+  background: var(--color-ink-850);
+  border-color: color-mix(in srgb, var(--color-emerald-primary) 36%, var(--color-ink-600));
+  box-shadow: 0 6px 18px -14px rgba(8, 12, 22, 0.6);
+}
+.tab-count {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-mist-500);
+}
+
+/* Segmented control: order matters (e.g. White / Black orientation). */
+.segmented {
+  display: inline-flex;
+  padding: 0.2rem;
+  gap: 0.15rem;
+  border-radius: 12px;
+  border: 1px solid var(--color-ink-700);
+  background: var(--color-ink-800);
+}
+.segmented button {
+  border-radius: 9px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-mist-400);
+  transition: all 0.16s ease;
+}
+.segmented button:hover { color: var(--color-mist-100); }
+.segmented button[aria-pressed="true"] {
+  background: var(--color-ink-850);
+  color: var(--color-mist-50);
+  box-shadow: 0 4px 14px -12px rgba(8, 12, 22, 0.8);
+}
+
+/* ---- Data display ------------------------------------------------------- */
+
+.stat {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid var(--color-ink-700);
+  background: var(--color-ink-850);
+  padding: 0.85rem 1.05rem;
+}
+.stat::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--color-emerald-primary), transparent 78%);
+}
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: 1.45rem;
+  font-weight: 650;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  color: var(--color-mist-50);
+  font-variant-numeric: tabular-nums;
+}
+.stat-hint { font-size: 0.75rem; color: var(--color-mist-400); }
+
+/* Dual quality bar: one stacked bar per side, the exact move-quality
+   distribution measured from engine CPL classifications. Widths are the
+   measured shares; the legend states the counts. Nothing here is estimated. */
+.quality-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--color-ink-750);
+}
+.quality-bar > span {
+  display: block;
+  height: 100%;
+}
+.quality-best { background: linear-gradient(90deg, var(--color-emerald-dim), var(--color-emerald-primary)); }
+.quality-good { background: color-mix(in srgb, var(--color-emerald-primary) 34%, var(--color-ink-750)); }
+.quality-neutral { background: var(--color-ink-600); }
+.quality-inaccuracy { background: color-mix(in srgb, var(--color-amber-primary) 58%, var(--color-ink-750)); }
+.quality-mistake { background: var(--color-amber-primary); }
+.quality-blunder { background: var(--color-rose-primary); }
+
+table.data-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.data-table th {
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-mist-400);
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--color-ink-700);
+  white-space: nowrap;
+}
+.data-table td {
+  padding: 0.7rem 0.8rem;
+  font-size: 0.875rem;
+  border-bottom: 1px solid var(--color-ink-700);
+  vertical-align: middle;
+}
+.data-table tbody tr { transition: background-color 0.14s ease; }
+.data-table tbody tr:hover { background: var(--color-ink-800); }
+.data-table tbody tr:last-child td { border-bottom: none; }
+
+.progress {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-ink-750);
+  overflow: hidden;
+}
+.progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--color-emerald-dim), var(--color-emerald-primary));
+  transition: width 0.3s ease;
+}
+
+/* Three-way forecast bar: White / draw / Black, always in that order. */
+.forecast-bar {
+  display: flex;
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--color-ink-700);
+  background: var(--color-ink-800);
+}
+.forecast-white { background: linear-gradient(90deg, #ffffff, #c9d4e6); }
+.forecast-draw { background: linear-gradient(90deg, #8b98b0, #aab6c9); }
+.forecast-black { background: linear-gradient(90deg, #26304a, #46536f); }
+
+.eval-gradient {
+  background: linear-gradient(to top, var(--color-ink-900) 0%, var(--color-ink-600) 48%, #eef2f8 100%);
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--color-ink-800) 25%, var(--color-ink-750) 50%, var(--color-ink-800) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 2.2s linear infinite;
+  border-radius: 10px;
+}
+
+/* ---- Structure helpers -------------------------------------------------- */
+
+/* Guided first-run steps. State is carried by a left rail and the index chip so
+   the list reads as a path rather than three unrelated rows; done/active are the
+   only two states, both derived from stored data. */
+.onboard-step {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--color-ink-700);
+  border-left-width: 3px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-ink-800) 55%, transparent);
+  transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+.onboard-step.onboard-active {
+  border-left-color: var(--color-emerald-primary);
+  background: color-mix(in srgb, var(--color-emerald-primary) 9%, transparent);
+}
+.onboard-step.onboard-done {
+  border-left-color: color-mix(in srgb, var(--color-emerald-primary) 55%, transparent);
+}
+.onboard-index {
+  display: flex;
+  height: 1.9rem;
+  width: 1.9rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid var(--color-ink-600);
+  background: var(--color-ink-800);
+  font-size: 0.8rem;
+  font-weight: 650;
+  color: var(--color-mist-300);
+}
+.onboard-step.onboard-active .onboard-index {
+  border-color: color-mix(in srgb, var(--color-emerald-primary) 45%, transparent);
+  background: color-mix(in srgb, var(--color-emerald-primary) 16%, transparent);
+  color: var(--color-emerald-primary);
+}
+.onboard-step.onboard-done .onboard-index {
+  border-color: color-mix(in srgb, var(--color-emerald-primary) 45%, transparent);
+  background: color-mix(in srgb, var(--color-emerald-primary) 16%, transparent);
+  color: var(--color-emerald-primary);
+}
+
+/* Small state pill used everywhere for game status. */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+  border: 1px solid var(--color-ink-600);
+  background: var(--color-ink-800);
+  color: var(--color-mist-200);
+}
+.status-pill .dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+/* A compact "why / how" disclosure: keeps the method one click away without
+   putting paragraphs of prose in front of every number. */
+.disclosure > summary {
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-mist-400);
+  transition: color 0.16s ease;
+}
+.disclosure > summary::-webkit-details-marker { display: none; }
+.disclosure > summary:hover { color: var(--color-emerald-primary); }
+.disclosure[open] > summary { color: var(--color-emerald-primary); }
+
+/* Theme-toggle icons: which one is visible is decided here, not in React, so
+   the control can never disagree with the theme actually applied to the page.
+   Sun shows in dark mode (click → light), moon shows in light mode. */
+.icon-sun { display: none; }
+.icon-moon { display: inline-flex; }
+html[data-theme="dark"] .icon-sun { display: inline-flex; }
+html[data-theme="dark"] .icon-moon { display: none; }
+
+.grid-bg {
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--color-mist-50) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--color-mist-50) 6%, transparent) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: radial-gradient(680px 320px at 30% 0%, black, transparent 78%);
+}
+
+/* ---- Page backdrop: quiet chess imagery ----------------------------------
+
+   Gradients alone read as empty, so the page sits on a fixed decorative layer:
+   a checkerboard whisper in the top-right corner, a large knight watermark
+   rising from the bottom-left, and a film-grain pass that keeps the large
+   flat surfaces from feeling plastic. Everything is drawn from tokens — the
+   watermark uses `--color-mist-50` (near-black in light, near-white in dark),
+   so one definition is theme-correct in both. It is a single aria-hidden,
+   pointer-events-none element painted below all content. */
+.page-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+.page-backdrop::before {
+  content: "";
+  position: absolute;
+  top: -160px;
+  right: -140px;
+  width: 640px;
+  height: 640px;
+  border-radius: 56px;
+  background: repeating-conic-gradient(
+    color-mix(in srgb, var(--color-mist-50) 9%, transparent) 0% 25%,
+    transparent 0% 50%
+  );
+  background-size: 92px 92px;
+  transform: rotate(14deg);
+  opacity: 0.5;
+  -webkit-mask-image: radial-gradient(closest-side, black 8%, transparent 72%);
+  mask-image: radial-gradient(closest-side, black 8%, transparent 72%);
+}
+.page-backdrop::after {
+  content: "♞";
+  position: absolute;
+  bottom: -0.26em;
+  left: -0.05em;
+  font-size: clamp(260px, 32vw, 440px);
+  line-height: 1;
+  color: color-mix(in srgb, var(--color-mist-50) 7%, transparent);
+  -webkit-mask-image: linear-gradient(to top, black 34%, transparent 88%);
+  mask-image: linear-gradient(to top, black 34%, transparent 88%);
+}
+.page-backdrop-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.22;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Grouped navigation menus (§35). Native <details> so they work without JS
+   state; the panel is positioned so it never widens the header track. */
+.nav-menu > summary::-webkit-details-marker { display: none; }
+.nav-menu > summary::marker { content: ""; }
+.nav-menu[open] > summary { background: var(--color-ink-800); color: var(--color-mist-50); }
+.nav-menu-panel {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  z-index: 50;
+  display: flex;
+  min-width: 15rem;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.35rem;
+  border: 1px solid var(--color-ink-700);
+  border-radius: 14px;
+  background: var(--color-ink-850);
+  box-shadow: 0 18px 40px -20px rgb(0 0 0 / 0.55);
+}
+.nav-menu-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 10px;
+  transition: background 0.15s ease;
+}
+.nav-menu-item:hover { background: color-mix(in srgb, var(--color-ink-700) 60%, transparent); }

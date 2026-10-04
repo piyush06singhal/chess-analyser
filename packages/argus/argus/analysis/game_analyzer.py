@@ -17,7 +17,7 @@ from argus.analysis.classification import (
     MoveClassificationInput,
     classify_move,
 )
-from argus.analysis.engine.base import ChessEngine, GameMoveEvaluation
+from argus.analysis.engine.base import CandidateMove, ChessEngine, GameMoveEvaluation
 from argus.analysis.features.extractor import extract_position_features_from_fen
 from argus.analysis.features.models import RawPositionFeatures
 from argus.analysis.phase import GamePhase, PhaseThresholds, classify_position_fen
@@ -47,15 +47,24 @@ class AnalyzedMove(BaseModel):
 
     # Engine evidence (mover perspective)
     evaluation_before_cp: int | None = None
+    evaluation_before_mate: int | None = None
     evaluation_after_cp: int | None = None
+    evaluation_after_mate: int | None = None
     evaluation_change_cp: int | None = None
     centipawn_loss: int | None = None
+    played_eval_cp: int | None = None
+    played_eval_mate: int | None = None
+    played_eval_source: str = "unavailable"
     best_move_uci: str | None = None
     best_move_san: str | None = None
     is_best_move: bool = False
     second_best_gap: int | None = Field(
         default=None, description="best_cp minus second-best cp; None when MultiPV < 2"
     )
+    #: The MultiPV lines (root moves + evaluations) from the same search that
+    #: produced the best line. Passed through to storage so alternative moves are
+    #: evidence, not a guess.
+    candidate_moves: list[CandidateMove] = Field(default_factory=list)
     depth: int
     principal_variation: list[str] = Field(default_factory=list)
 
@@ -161,24 +170,60 @@ class GameAnalyzer:
         self._classification_thresholds = classification_thresholds
         self._phase_thresholds = phase_thresholds
 
+    @property
+    def classification_policy(self) -> ClassificationThresholds:
+        return self._classification_thresholds or ClassificationThresholds()
+
     def analyze(
-        self, game: Game, *, depth: int | None = None, multipv: int | None = None
+        self,
+        game: Game,
+        *,
+        depth: int | None = None,
+        multipv: int | None = None,
+        movetime_ms: int | None = None,
+        on_progress=None,
+        should_cancel=None,
+        on_move=None,
+        start_ply: int | None = None,
+        end_ply: int | None = None,
     ) -> GameAnalysis:
         """Analyze every move of the game and aggregate the results.
 
         Requires ``multipv >= 2`` for second-best-gap evidence (brilliant
         detection); falls back gracefully when the engine returns one line.
+
+        ``on_progress(completed, total)`` and ``should_cancel()`` are forwarded
+        to the engine so long analyses report progress and can be stopped.
         """
-        evaluations = self._engine.analyze_game(game, depth=depth, multipv=multipv)
-        if len(evaluations) != len(game.moves):
+        analyzed: list[AnalyzedMove] = []
+        expected = len(game.moves) - (max(0, (start_ply or 1) - 1))
+        if end_ply is not None:
+            expected -= max(0, len(game.moves) - end_ply)
+
+        def _enrich(evaluation: GameMoveEvaluation) -> None:
+            # ``ply`` is 1-based and contiguous, so it indexes straight into moves.
+            move = game.moves[evaluation.ply - 1]
+            enriched = self._analyze_move(move, evaluation)
+            analyzed.append(enriched)
+            if on_move is not None:
+                on_move(enriched)
+
+        self._engine.analyze_game(
+            game,
+            depth=depth,
+            multipv=multipv,
+            movetime_ms=movetime_ms,
+            on_progress=on_progress,
+            should_cancel=should_cancel,
+            on_move=_enrich,
+            start_ply=start_ply,
+            end_ply=end_ply,
+        )
+        if len(analyzed) != expected:
             raise AnalysisError(
                 "Engine returned an incomplete evaluation of the game",
-                details={"expected": len(game.moves), "received": len(evaluations)},
+                details={"expected": expected, "received": len(analyzed)},
             )
-
-        analyzed: list[AnalyzedMove] = []
-        for move, evaluation in zip(game.moves, evaluations):
-            analyzed.append(self._analyze_move(move, evaluation))
         return GameAnalysis(
             game_id=game.id,
             moves=analyzed,
@@ -221,13 +266,19 @@ class GameAnalyzer:
             fen_before=move.fen_before,
             fen_after=move.fen_after,
             evaluation_before_cp=evaluation.evaluation_before_cp,
+            evaluation_before_mate=evaluation.evaluation_before_mate,
             evaluation_after_cp=evaluation.evaluation_after_cp,
+            evaluation_after_mate=evaluation.evaluation_after_mate,
             evaluation_change_cp=evaluation.evaluation_change_cp,
             centipawn_loss=evaluation.centipawn_loss,
+            played_eval_cp=evaluation.played_eval_cp,
+            played_eval_mate=evaluation.played_eval_mate,
+            played_eval_source=evaluation.played_eval_source,
             best_move_uci=evaluation.best_move_uci,
             best_move_san=evaluation.best_move_san,
             is_best_move=evaluation.is_best_move,
             second_best_gap=gap,
+            candidate_moves=list(evaluation.candidate_moves),
             depth=evaluation.depth,
             principal_variation=evaluation.principal_variation,
             classification=classification,

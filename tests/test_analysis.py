@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import chess
-import pytest
 
 from argus.analysis.classification import (
     ClassificationThresholds,
@@ -17,7 +16,6 @@ from argus.analysis.phase import (
     classify_position,
     classify_position_fen,
 )
-from argus.shared.errors import InsufficientDataError, ToolNotFoundError, ToolUnavailableError
 
 from tests.conftest import START_FEN
 
@@ -69,8 +67,13 @@ class TestClassification:
         result = classify_move(_evaluation(None), ClassificationThresholds())
         assert result is MoveClassification.BEST
 
-    def test_small_loss_is_good(self):
+    def test_small_loss_is_excellent(self):
+        # Phase 3 splits a near-best move (EXCELLENT, <= 25cp) from GOOD.
         result = classify_move(_evaluation(15), ClassificationThresholds())
+        assert result is MoveClassification.EXCELLENT
+
+    def test_moderate_loss_is_good(self):
+        result = classify_move(_evaluation(40), ClassificationThresholds())
         assert result is MoveClassification.GOOD
 
     def test_sacrifice_with_small_loss_is_brilliant(self):

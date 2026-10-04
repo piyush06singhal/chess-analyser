@@ -25,6 +25,9 @@ from typing import Callable
 import chess
 
 from argus.analysis.engine.base import (
+    PLAYED_EVAL_RESULTING_POSITION,
+    PLAYED_EVAL_SAME_SEARCH,
+    PLAYED_EVAL_UNAVAILABLE,
     AnalyzedPosition,
     ChessEngine,
     EngineLine,
@@ -33,7 +36,6 @@ from argus.analysis.engine.base import (
     flip_score,
 )
 from argus.chess_core.fen import validate_fen
-from argus.chess_core.models import Game
 from argus.shared.errors import (
     EngineError,
     EngineResponseError,
@@ -41,6 +43,9 @@ from argus.shared.errors import (
     EngineUnavailableError,
     InvalidFenError,
     InvalidMoveError,
+)
+from argus.shared.errors import (  # noqa: F401 — re-exported for callers importing from here
+    AnalysisCancelledError,
 )
 from argus.shared.logging import get_logger
 
@@ -76,7 +81,10 @@ def locate_stockfish(configured_path: str | None = None) -> str | None:
 
 @dataclass
 class StockfishSettings:
-    """Engine configuration. Values come from environment/config, not code."""
+    """Engine configuration. Values come from environment/config, not code.
+
+    ``movetime_ms`` (when > 0) governs the search by time instead of depth.
+    """
 
     path: str | None = None
     depth: int = 14
@@ -84,6 +92,29 @@ class StockfishSettings:
     timeout_seconds: float = 30.0
     threads: int = 1
     hash_mb: int = 256
+    movetime_ms: int = 0
+    threads_max: int = 0  # 0 = engine default
+    #: How long to wait for engine output before sending a harmless ``isready``
+    #: nudge. Stockfish block-buffers stdout when it is a pipe, so a completed
+    #: search can sit unflushed until new input arrives; the nudge forces it.
+    #: This value is therefore a *per-search latency floor*: every search costs
+    #: at least this long. It was 0.5 s, which meant a 33-move game paid ~33 s
+    #: of pure waiting on top of real search time. 0.05 s keeps the nudge (which
+    #: is what prevents the stall) while making shallow searches ~10x faster.
+    flush_nudge_seconds: float = 0.05
+
+    def describe(self) -> dict:
+        """Reproducibility record of the parameters actually used."""
+        return {
+            "path": self.path,
+            "depth": self.depth,
+            "multipv": self.multipv,
+            "timeout_seconds": self.timeout_seconds,
+            "threads": self.threads,
+            "hash_mb": self.hash_mb,
+            "movetime_ms": self.movetime_ms,
+            "flush_nudge_seconds": self.flush_nudge_seconds,
+        }
 
 
 class StockfishEngine(ChessEngine):
@@ -193,16 +224,20 @@ class StockfishEngine(ChessEngine):
         *,
         collect: list[str] | None = None,
         nudge_command: str | None = "isready",
-        nudge_after_seconds: float = 0.5,
+        nudge_after_seconds: float | None = None,
     ) -> bool:
         """Read engine output until ``predicate`` matches or the timeout elapses.
 
-        Stockfish buffers stdout when it is a pipe: pending output (including
-        terminal markers such as ``uciok``/``readyok``/``bestmove``) can sit
-        unflushed until new input arrives. While waiting, a harmless
+        Stockfish block-buffers stdout when it is a pipe: pending output
+        (including terminal markers such as ``uciok``/``readyok``/``bestmove``)
+        can sit unflushed until new input arrives. While waiting, a harmless
         ``isready`` nudge is therefore sent at intervals to flush the buffer.
         Inserted ``readyok`` lines never match ``uciok``/``bestmove``
         predicates and are skipped by the info-line parser.
+
+        The nudge interval (``nudge_after_seconds``, defaulting to
+        ``StockfishSettings.flush_nudge_seconds``) is a per-search latency
+        floor, because the engine's answer is only seen after a flush.
 
         Raises:
             EngineError: when the engine process dies mid-read (crash).
@@ -210,8 +245,14 @@ class StockfishEngine(ChessEngine):
         process = self._process
         if process is None or process.stdout is None:
             raise EngineError("Stockfish process is not running")
+        interval = (
+            nudge_after_seconds
+            if nudge_after_seconds is not None
+            else self._settings.flush_nudge_seconds
+        )
+        interval = max(0.005, interval)
         deadline = time.monotonic() + self._settings.timeout_seconds
-        next_nudge = time.monotonic() + nudge_after_seconds
+        next_nudge = time.monotonic() + interval
         fd = process.stdout.fileno()
         while True:
             now = time.monotonic()
@@ -220,8 +261,8 @@ class StockfishEngine(ChessEngine):
                 return False
             if nudge_command is not None and now >= next_nudge:
                 self._send(nudge_command)
-                next_nudge = time.monotonic() + nudge_after_seconds
-            wait = min(remaining, max(0.05, next_nudge - time.monotonic()))
+                next_nudge = time.monotonic() + interval
+            wait = min(remaining, max(0.005, next_nudge - time.monotonic()))
             try:
                 ready, _, _ = select.select([fd], [], [], wait)
             except (OSError, ValueError):
@@ -238,8 +279,29 @@ class StockfishEngine(ChessEngine):
 
     # --- analysis primitives ------------------------------------------------------
 
+    def clear_hash(self) -> None:
+        """Reset the transposition table so the next search starts from scratch.
+
+        Caissa records engine baselines (§45) that must reproduce run to run.
+        Stockfish's score at a fixed depth can drift by a few centipawns — and two
+        near-equal top moves can swap order — depending on what earlier searches
+        left in the hash table. A reproducible sample therefore begins from a
+        cleared table instead of inheriting the previous search's state.
+        """
+        with self._lock:
+            self._ensure_started()
+            self._send("ucinewgame")
+            self._send("setoption name Clear Hash")
+            self._send("isready")
+            self._read_until(lambda line: line == "readyok")
+
     def analyze_position(
-        self, fen: str, *, depth: int | None = None, multipv: int | None = None
+        self,
+        fen: str,
+        *,
+        depth: int | None = None,
+        multipv: int | None = None,
+        movetime_ms: int | None = None,
     ) -> AnalyzedPosition:
         validation = validate_fen(fen)
         if not validation.is_valid:
@@ -268,14 +330,20 @@ class StockfishEngine(ChessEngine):
         depth_used = depth or self._settings.depth
         multipv_used = multipv or self._settings.multipv
         multipv_used = max(1, min(multipv_used, board.legal_moves.count()))
+        time_used = movetime_ms if movetime_ms is not None else self._settings.movetime_ms
+        if time_used is not None and time_used <= 0:
+            time_used = None
 
         with self._lock:
             self._ensure_started()
             raw_lines: list[str] = []
+            go_command = (
+                f"go movetime {time_used}" if time_used else f"go depth {depth_used}"
+            )
             try:
                 self._send(f"setoption name MultiPV value {multipv_used}")
                 self._send(f"position fen {validation.fen}")
-                self._send(f"go depth {depth_used}")
+                self._send(go_command)
                 got_bestmove = self._read_until(
                     lambda line: line.startswith("bestmove"), collect=raw_lines
                 )
@@ -286,7 +354,7 @@ class StockfishEngine(ChessEngine):
                 self._terminate()
                 raise EngineTimeoutError(
                     f"Stockfish timed out after {self._settings.timeout_seconds}s "
-                    f"(depth {depth_used})"
+                    f"({go_command})"
                 )
 
         bestmove_uci: str | None = None
@@ -310,6 +378,8 @@ class StockfishEngine(ChessEngine):
             if line.move_san is None:
                 line.move_san = self._san_for(board, line.move_uci)
 
+        nodes = max((line.nodes for line in lines if line.nodes), default=None)
+        nps = max((line.nps for line in lines if line.nps), default=None)
         return AnalyzedPosition(
             fen=validation.fen,
             depth=max((line.depth for line in lines), default=depth_used),
@@ -317,12 +387,19 @@ class StockfishEngine(ChessEngine):
             best_move_uci=best_move_uci,
             best_move_san=best_move_san,
             lines=lines,
+            nodes=nodes,
+            nps=nps,
             engine="stockfish",
             engine_version=self._version,
         )
 
     def compare_moves(
-        self, fen: str, moves: list[str], *, depth: int | None = None
+        self,
+        fen: str,
+        moves: list[str],
+        *,
+        depth: int | None = None,
+        movetime_ms: int | None = None,
     ) -> list[MoveComparison]:
         """Compare candidate moves against the engine's best in the position.
 
@@ -355,7 +432,9 @@ class StockfishEngine(ChessEngine):
 
         depth_used = depth or self._settings.depth
         multipv_used = max(1, min(len(parsed_moves), board.legal_moves.count()))
-        analysis = self.analyze_position(validation.fen, depth=depth_used, multipv=multipv_used)
+        analysis = self.analyze_position(
+            validation.fen, depth=depth_used, multipv=multipv_used, movetime_ms=movetime_ms
+        )
 
         lines_by_move = {line.move_uci: line for line in analysis.lines}
         best_line = analysis.lines[0] if analysis.lines else None
@@ -367,14 +446,20 @@ class StockfishEngine(ChessEngine):
             played_line = lines_by_move.get(move_uci)
             if played_line is not None:
                 played_cp, played_mate = played_line.cp, played_line.mate
+                played_source = PLAYED_EVAL_SAME_SEARCH
             else:
                 board_copy = board.copy(stack=False)
                 board_copy.push(move)
-                after = self.analyze_position(board_copy.fen(), depth=depth_used, multipv=1)
-                after_line = after.lines[0] if after.lines else None
-                played_cp, played_mate = (
-                    flip_score(after_line.cp, after_line.mate) if after_line else (None, None)
+                after = self.analyze_position(
+                    board_copy.fen(), depth=depth_used, multipv=1, movetime_ms=movetime_ms
                 )
+                after_line = after.lines[0] if after.lines else None
+                if after_line is not None:
+                    played_cp, played_mate = flip_score(after_line.cp, after_line.mate)
+                    played_source = PLAYED_EVAL_RESULTING_POSITION
+                else:
+                    played_cp, played_mate = None, None
+                    played_source = PLAYED_EVAL_UNAVAILABLE
             comparisons.append(
                 MoveComparison(
                     fen=validation.fen,
@@ -384,6 +469,7 @@ class StockfishEngine(ChessEngine):
                     best_move_san=analysis.best_move_san,
                     played_cp=played_cp,
                     best_cp=best_cp,
+                    played_eval_source=played_source,
                     centipawn_loss=compute_cp_loss(best_cp, best_mate, played_cp, played_mate),
                     is_best_move=bool(analysis.best_move_uci and move_uci == analysis.best_move_uci),
                     depth=analysis.depth,
@@ -419,6 +505,18 @@ class StockfishEngine(ChessEngine):
                 continue
             if score_kind not in ("cp", "mate") or not pv or not 1 <= index <= multipv:
                 continue
+            nodes = None
+            nps = None
+            if "nodes" in tokens:
+                try:
+                    nodes = int(tokens[tokens.index("nodes") + 1])
+                except (IndexError, ValueError):
+                    nodes = None
+            if "nps" in tokens:
+                try:
+                    nps = int(tokens[tokens.index("nps") + 1])
+                except (IndexError, ValueError):
+                    nps = None
             entry = EngineLine(
                 index=index,
                 depth=depth,
@@ -426,6 +524,8 @@ class StockfishEngine(ChessEngine):
                 cp=score_value if score_kind == "cp" else None,
                 mate=score_value if score_kind == "mate" else None,
                 pv=pv,
+                nodes=nodes,
+                nps=nps,
             )
             previous = by_index.get(index)
             if previous is None or depth >= previous.depth:

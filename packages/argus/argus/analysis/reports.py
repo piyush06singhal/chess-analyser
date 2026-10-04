@@ -2,9 +2,10 @@
 
 A report turns a :class:`GameAnalysis` into structured sections. Every value
 is engine-derived or board-derived — the builder never invents insights.
-Sections whose full implementation is not justified yet (narratives, player
-tendencies, training plans) are listed in ``pending_sections`` instead of
-being faked.
+Sections this per-game report object does not embed (narratives, player
+tendencies, recommended training) are listed in ``pending_sections`` instead of
+being faked. Player tendencies and training exist as their own surfaces (Phases 5
+and 8); they are only outside this object.
 """
 
 from __future__ import annotations
@@ -18,8 +19,8 @@ from argus.analysis.game_analyzer import GameAnalysis, GameSummary
 from argus.analysis.phase import GamePhase
 from argus.chess_core.models import Color, Game
 
-# Sections planned for later phases. Listed explicitly so the UI can show a
-# proper "not implemented yet" state instead of fabricated content.
+# Sections this report object does not embed. Listed explicitly so the UI can
+# show a proper "not part of this report" state instead of fabricated content.
 PENDING_SECTIONS = (
     "Opening narrative",
     "Tactical opportunities",

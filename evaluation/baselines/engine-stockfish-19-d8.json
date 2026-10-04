@@ -1,0 +1,21 @@
+{
+  "depth": 8,
+  "engine_version": "Stockfish 19",
+  "positions": {
+    "6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1": {
+      "best_move": "a1a8",
+      "cp": null,
+      "mate": 1
+    },
+    "8/5kpp/8/8/8/8/5PPP/6KR w - - 0 1": {
+      "best_move": "g2g4",
+      "cp": 675,
+      "mate": null
+    },
+    "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1": {
+      "best_move": "e2e4",
+      "cp": 25,
+      "mate": null
+    }
+  }
+}

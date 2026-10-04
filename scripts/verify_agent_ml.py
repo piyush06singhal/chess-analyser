@@ -87,7 +87,6 @@ def main() -> int:
         name="smoke", problem_type=ProblemType.CLASSIFICATION, label_column="y", min_samples=100
     )
     rows = [{"y": "win", "feature_a": "1"}] * 50
-    result = validate_dataset_strict(rows, spec) if False else None
     try:
         validate_dataset_strict(rows, spec)
         check(False, "insufficient dataset is refused")

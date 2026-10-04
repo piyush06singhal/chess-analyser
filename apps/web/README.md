@@ -1,36 +1,34 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Caissa — web app
 
-## Getting Started
+The Next.js frontend for Caissa. It is a client of the API in `apps/api` and
+holds no chess logic: every number it shows comes from the backend, and it
+computes no analysis of its own.
 
-First, run the development server:
+## Develop
+
+From the repository root, `docker compose up` serves the whole stack (web on
+<http://localhost:3100>, API on <http://localhost:8002>). To run the web app on
+its own against a running API:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd apps/web
+npm install
+NEXT_PUBLIC_API_URL=http://localhost:8002 npm run dev   # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`NEXT_PUBLIC_API_URL` is baked in at build time; it must match the variable read
+by `src/lib/api.ts`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Checks
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run lint    # eslint, 0 warnings expected
+npm run build   # type-check + production build
+npx playwright test tests/e2e/accessibility.spec.ts   # axe, serious/critical = 0
+npx playwright test tests/e2e/responsive.spec.ts      # no overflow at 390/768/1280 px
+```
 
-## Learn More
+The browser suites run against a live app; set `ARGUS_WEB_URL` to point at one.
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See the repository root [`README.md`](../../README.md) and
+[`docs/product/`](../../docs/product/) for the full picture.

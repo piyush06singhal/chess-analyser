@@ -159,6 +159,44 @@ class TestChessCoachAgent:
         assert len(tool_messages) == 1
         assert tool_messages[0]["content"]["status"] == "ok"
 
+    def test_tool_call_loop_emits_a_matching_assistant_message(self, registry):
+        """A real provider needs the assistant tool request beside its result.
+
+        Without the assistant ``tool_calls`` message (and a matching
+        ``tool_call_id`` on the result) a real provider rejects the turn — Groq
+        renders the conversation as a template and fails with "Tools should have
+        a name!". The echo/scripted providers never noticed, so this pins the
+        neutral shape the provider boundary serialises.
+        """
+        client = _FakeLLMClient(
+            [
+                {
+                    "tool_calls": [
+                        {"id": "call_x", "name": "get_current_position", "arguments": {}}
+                    ]
+                },
+                {"message": "Done."},
+            ]
+        )
+        agent = ChessCoachAgent(registry, llm_client=client)
+        agent.run("Check my game")
+        messages = client.calls[1]["messages"]
+        assistant = next(
+            m for m in messages if m.get("role") == "assistant" and m.get("tool_calls")
+        )
+        call = assistant["tool_calls"][0]
+        assert call["id"] == "call_x"
+        assert call["name"] == "get_current_position"
+        tool_message = next(m for m in messages if m.get("role") == "tool")
+        assert tool_message["tool_call_id"] == "call_x"
+        assert tool_message["name"] == "get_current_position"
+        # The neutral shape must serialise without a name-less call.
+        from argus.llm.openai_client import _to_wire_messages
+
+        wire = _to_wire_messages(messages)
+        wire_call = next(m for m in wire if m.get("tool_calls"))["tool_calls"][0]
+        assert wire_call["function"]["name"] == "get_current_position"
+
     def test_tool_error_is_reported_not_raised(self, registry):
         client = _FakeLLMClient(
             [

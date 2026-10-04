@@ -1,0 +1,186 @@
+"""Player Intelligence / Chess DNA (Phase 5).
+
+Turns many analyzed games into an evidence-backed player profile:
+
+    analyzed games → aggregation → feature extraction → pattern detection
+    → evidence generation → player profile → Chess DNA → dashboard
+
+The game-analysis pipeline is untouched: this package consumes the structured
+``GameReport`` output (and the stored moves) and never runs the engine, so a
+profile is deterministic and cheap to rebuild.
+
+Everything user-facing carries three things: the **measurement**, its **sample
+size**, and its **claim level** — because the whole point of the phase is to
+tell an observation apart from a repeated pattern apart from a tendency.
+"""
+
+from argus.player_intelligence.aggregate import (
+    analyze_games,
+    by_color,
+    classify_time_control,
+    conversion,
+    king_safety,
+    material_stats,
+    opening_family,
+    openings,
+    opponents,
+    phases,
+    positional,
+    recovery,
+    tactical,
+    time_controls,
+    trends,
+)
+from argus.player_intelligence.dna import DIMENSION_DEFINITIONS, build_chess_dna
+from argus.player_intelligence.features import (
+    FEATURE_DEFINITIONS,
+    FEATURE_VERSION,
+    PlayerFeature,
+    PlayerFeatureSet,
+    extract_features,
+)
+from argus.player_intelligence.insights import build_insights
+from argus.player_intelligence.models import (
+    ChessDna,
+    ChessDnaDimension,
+    EvidenceRef,
+    GameOutcome,
+    InsightCategory,
+    KingSafetyEventInput,
+    MaterialInput,
+    OpeningDeviationInput,
+    PhasePerformanceInput,
+    PlayerColorStatistics,
+    PlayerConversionStatistics,
+    PlayerErrorEvent,
+    PlayerGameInput,
+    PlayerGameStatistics,
+    PlayerInsight,
+    PlayerKingSafetyStatistics,
+    PlayerMaterialStatistics,
+    PlayerOpeningEntry,
+    PlayerOpeningStatistics,
+    PlayerOpponentContext,
+    PlayerPhaseEntry,
+    PlayerPhaseStatistics,
+    PlayerPositionalStatistics,
+    PlayerProfile,
+    PlayerRecoveryStatistics,
+    PlayerTacticalStatistics,
+    PlayerTimeControlEntry,
+    PlayerTimeControlStatistics,
+    PlayerTrendEntry,
+    PlayerTrendStatistics,
+    PositionalEventInput,
+    SampleNote,
+    TacticalEventInput,
+    TimeClass,
+    TrajectoryInput,
+)
+from argus.player_intelligence.patterns import (
+    detect_conversion_and_recovery,
+    detect_error_category_patterns,
+    detect_opening_patterns,
+    detect_phase_patterns,
+    detect_positional_patterns,
+    detect_tactical_patterns,
+)
+from argus.player_intelligence.policy import (
+    COVERAGE_BANDS,
+    DEFAULT_POLICY,
+    ClaimLevel,
+    Coverage,
+    PlayerInsightPolicy,
+)
+from argus.player_intelligence.profile import (
+    INSUFFICIENT_DATA_MESSAGE,
+    METHODOLOGY_VERSION,
+    PROFILE_VERSION,
+    build_profile,
+)
+from argus.player_intelligence.sanity import (
+    ProfileSanityError,
+    assert_profile_consistent,
+    validate_profile,
+)
+from argus.player_intelligence.service import PlayerIntelligenceService
+
+__all__ = [
+    "COVERAGE_BANDS",
+    "ChessDna",
+    "ChessDnaDimension",
+    "ClaimLevel",
+    "Coverage",
+    "DEFAULT_POLICY",
+    "DIMENSION_DEFINITIONS",
+    "EvidenceRef",
+    "FEATURE_DEFINITIONS",
+    "FEATURE_VERSION",
+    "GameOutcome",
+    "INSUFFICIENT_DATA_MESSAGE",
+    "InsightCategory",
+    "KingSafetyEventInput",
+    "METHODOLOGY_VERSION",
+    "MaterialInput",
+    "OpeningDeviationInput",
+    "PROFILE_VERSION",
+    "PhasePerformanceInput",
+    "PlayerColorStatistics",
+    "PlayerConversionStatistics",
+    "PlayerErrorEvent",
+    "PlayerFeature",
+    "PlayerFeatureSet",
+    "PlayerGameInput",
+    "PlayerGameStatistics",
+    "PlayerInsight",
+    "PlayerInsightPolicy",
+    "PlayerIntelligenceService",
+    "PlayerKingSafetyStatistics",
+    "PlayerMaterialStatistics",
+    "PlayerOpeningEntry",
+    "PlayerOpeningStatistics",
+    "PlayerOpponentContext",
+    "PlayerPhaseEntry",
+    "PlayerPhaseStatistics",
+    "PlayerPositionalStatistics",
+    "PlayerProfile",
+    "PlayerRecoveryStatistics",
+    "PlayerTacticalStatistics",
+    "PlayerTimeControlEntry",
+    "PlayerTimeControlStatistics",
+    "PlayerTrendEntry",
+    "PlayerTrendStatistics",
+    "PositionalEventInput",
+    "ProfileSanityError",
+    "SampleNote",
+    "TacticalEventInput",
+    "TimeClass",
+    "TrajectoryInput",
+    "analyze_games",
+    "assert_profile_consistent",
+    "build_chess_dna",
+    "build_insights",
+    "build_profile",
+    "by_color",
+    "classify_time_control",
+    "conversion",
+    "detect_conversion_and_recovery",
+    "detect_error_category_patterns",
+    "detect_opening_patterns",
+    "detect_phase_patterns",
+    "detect_positional_patterns",
+    "detect_tactical_patterns",
+    "extract_features",
+    "king_safety",
+    "material_stats",
+    "opening_family",
+    "openings",
+    "opponents",
+    "phases",
+    "positional",
+    "recovery",
+    "tactical",
+    "time_controls",
+    "trends",
+    "validate_profile",
+]

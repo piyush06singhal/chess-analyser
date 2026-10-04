@@ -1,4 +1,4 @@
-"""Domain error hierarchy shared across ARGUS Chess packages.
+"""Domain error hierarchy shared across Caissa packages.
 
 Every error carries a stable machine-readable ``code`` so the API layer can
 map errors to HTTP responses centrally without leaking internals.
@@ -10,7 +10,7 @@ from typing import Any
 
 
 class ArgusError(Exception):
-    """Base class for all ARGUS Chess domain errors."""
+    """Base class for all Caissa domain errors."""
 
     code = "argus_error"
 
@@ -44,6 +44,51 @@ class InvalidMoveError(ValidationError):
     code = "invalid_move"
 
 
+class UnsupportedSourceError(ValidationError):
+    """Raised when an import source is unknown or not implemented yet."""
+
+    code = "unsupported_source"
+
+
+class UploadError(ValidationError):
+    """Raised when an uploaded file is rejected (type, size, or content)."""
+
+    code = "upload_error"
+
+
+# --- External game sources (Chess.com, Lichess, …) ----------------------------
+
+
+class SourceError(ArgusError):
+    """Base class for failures talking to an external game source."""
+
+    code = "source_error"
+
+
+class SourcePlayerNotFoundError(SourceError):
+    """Raised when a source has no such player (or publishes no games for them)."""
+
+    code = "source_player_not_found"
+
+
+class SourceUnavailableError(SourceError):
+    """Raised when an external game source cannot be reached or errors out."""
+
+    code = "source_unavailable"
+
+
+class SourceRateLimitedError(SourceError):
+    """Raised when an external game source refuses further requests for now."""
+
+    code = "source_rate_limited"
+
+
+class SourceResponseError(SourceError):
+    """Raised when an external game source returns a payload Caissa cannot read."""
+
+    code = "source_response"
+
+
 # --- Chess engine -------------------------------------------------------------
 
 
@@ -51,6 +96,18 @@ class EngineError(ArgusError):
     """Base class for chess engine failures."""
 
     code = "engine_error"
+
+
+class EngineNotFoundError(ArgusError):
+    """Raised at startup when no engine binary can be located."""
+
+    code = "engine_unavailable"
+
+
+class AnalysisCancelledError(ArgusError):
+    """Raised when an analysis run is cancelled by the user."""
+
+    code = "analysis_cancelled"
 
 
 class EngineUnavailableError(EngineError):
@@ -78,6 +135,17 @@ class AnalysisError(ArgusError):
     """Raised when an analysis pipeline cannot be completed."""
 
     code = "analysis_error"
+
+
+class AnalysisRequiredError(ArgusError):
+    """Raised when structured intelligence is requested without stored engine analysis.
+
+    The game-intelligence layer reads the engine's stored output; it never runs
+    Stockfish itself, so it refuses to invent sections instead of asking for a
+    real analysis run first.
+    """
+
+    code = "analysis_required"
 
 
 # --- ML ------------------------------------------------------------------------
@@ -117,3 +185,52 @@ class NotFoundError(ArgusError):
     """Raised when a requested entity does not exist."""
 
     code = "not_found"
+
+
+class ConflictError(ArgusError):
+    """Raised when a request collides with an existing entity (e.g. a name).
+
+    Distinct from a validation error: the request is well-formed, but the state
+    it targets already exists. The API maps this to 409 so a client can tell a
+    real conflict from a malformed payload.
+    """
+
+    code = "conflict"
+
+
+# --- Operational (Phase 15) ----------------------------------------------------
+
+
+class ServiceBusyError(ArgusError):
+    """Raised when a bounded resource (engine slots, queue) is full.
+
+    Mapped to HTTP 503 with a ``Retry-After`` so a caller backs off instead of
+    piling more work onto a machine that is already at capacity. It is a real
+    refusal with a reason, never a silent drop.
+    """
+
+    code = "service_busy"
+
+
+class ConfigurationError(ArgusError):
+    """Raised when a deployment's configuration is invalid for its environment.
+
+    Distinct from a request validation error: this is a startup-time condition.
+    ``validate_settings`` collects every problem and reports them together, so a
+    misconfigured deployment fails with the whole list rather than one item at a
+    time.
+    """
+
+    code = "configuration_error"
+
+
+class FeatureDisabledError(ArgusError):
+    """Raised when a route is gated behind a feature flag that is off.
+
+    Mapped to HTTP 404: a feature that is disabled in this deployment is not
+    announced, exactly as a game the caller may not read is not announced. The
+    refusal is a first-class error with the flag name in its details, never a
+    silent no-op.
+    """
+
+    code = "feature_disabled"

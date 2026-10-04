@@ -33,6 +33,7 @@ def load_csv(path: str | Path) -> list[Row]:
         reader = csv.DictReader(handle)
         if reader.fieldnames is None:
             raise InsufficientDataError(f"Dataset file has no header row: {file_path}")
+        return [dict(row) for row in reader]
 def _label_values(rows: list[Row], label_column: str) -> list[str]:
     return [
         (row.get(label_column) or "").strip()

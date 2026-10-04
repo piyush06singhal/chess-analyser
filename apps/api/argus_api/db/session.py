@@ -10,8 +10,9 @@ reports persistence as unavailable instead of failing obscurely.
 from __future__ import annotations
 
 from collections.abc import Generator
+from contextlib import contextmanager
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -27,6 +28,18 @@ def build_engine(settings: Settings) -> Engine | None:
     if not url:
         return None
     engine = create_engine(url, pool_pre_ping=True, future=True)
+    if engine.dialect.name == "sqlite":
+        # SQLite enforces foreign keys only when asked, and the per-test SQLite
+        # database was therefore more permissive than production: it would accept
+        # a child row whose parent does not exist and hide a real relational bug
+        # until Postgres rejected it. Turn the constraint on so the test backend
+        # enforces what the deployed one does.
+        @event.listens_for(engine, "connect")
+        def _enable_sqlite_foreign_keys(dbapi_connection, _record) -> None:  # noqa: ANN001
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
     logger.info("Database engine created [url=%s]", _safe_url(url))
     return engine
 
@@ -52,6 +65,13 @@ class SessionFactory:
         return self._maker is not None
 
     def __call__(self) -> Generator[Session, None, None]:
+        """FastAPI dependency form (a generator yielding a session)."""
+        with self.session_scope() as session:
+            yield session
+
+    @contextmanager
+    def session_scope(self) -> Generator[Session, None, None]:
+        """Context-manager form for background tasks (opens and closes a session)."""
         if self._maker is None:
             raise RuntimeError("Database is not configured")
         session = self._maker()

@@ -1,0 +1,40 @@
+# Keep Docker build contexts small and clean. Without this, COPY brings the
+# host's .venv / node_modules / .next into the image and clobbers the
+# container-native dependencies installed in the Dockerfile.
+
+# ---- Version control & CI ----
+.git
+.github
+
+# ---- Python artifacts ----
+.venv
+venv
+**/__pycache__
+*.py[cod]
+**/*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# ---- Node artifacts ----
+node_modules
+.next
+.turbo
+*.tsbuildinfo
+
+# ---- Local data & environment ----
+.env
+.env.local
+data/argus*.db
+*.sqlite3
+logs
+*.log
+
+# ---- Docs & tooling (not needed inside images) ----
+docs
+tests
+scripts
+.freebuff
+.DS_Store

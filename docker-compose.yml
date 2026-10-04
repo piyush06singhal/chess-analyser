@@ -1,4 +1,4 @@
-# ARGUS Chess — local development environment.
+# Caissa — local development environment.
 # Usage: docker compose up --build
 # The API container installs Stockfish from the Debian repositories and
 # exposes it to the application through ARGUS_STOCKFISH_PATH.
@@ -26,29 +26,77 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "no"]
+    # Hardened (Phase 15 §7): require a password, cap memory with an eviction
+    # policy, disable the dangerous commands a cache never needs, and refuse
+    # persistence to disk (a cache is not a source of truth). The password comes
+    # from the host .env; the default keeps local dev working out of the box.
+    command:
+      - redis-server
+      - --requirepass
+      - "${REDIS_PASSWORD:-argus-dev}"
+      - --maxmemory
+      - "${REDIS_MAXMEMORY:-256mb}"
+      - --maxmemory-policy
+      - allkeys-lru
+      - --appendonly
+      - "no"
+      - --save
+      - ""
+      - --rename-command
+      - "FLUSHALL"
+      - ""
+      - --rename-command
+      - "CONFIG"
+      - ""
     ports:
       - "${REDIS_HOST_PORT:-6380}:6379"
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
       interval: 5s
       timeout: 5s
       retries: 12
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-argus-dev}
 
   api:
+    image: argus-chess-api:${ARGUS_VERSION:-1.0.0}
     build:
       context: .
       dockerfile: docker/Dockerfile.api
+      labels:
+        org.opencontainers.image.title: "Caissa API"
+        org.opencontainers.image.version: "${ARGUS_VERSION:-1.0.0}"
     restart: unless-stopped
     environment:
-      ARGUS_ENVIRONMENT: development
-      ARGUS_LOG_LEVEL: INFO
+      # ARGUS_ENV (not ARGUS_ENVIRONMENT) is the setting the API reads; the old
+      # name silently did nothing, leaving the environment at its default.
+      ARGUS_ENV: ${ARGUS_ENV:-development}
+      ARGUS_LOG_LEVEL: ${ARGUS_LOG_LEVEL:-INFO}
+      ARGUS_LOG_FORMAT: ${ARGUS_LOG_FORMAT:-text}
       ARGUS_DATABASE_URL: postgresql+psycopg2://argus:argus@postgres:5432/argus
-      ARGUS_REDIS_URL: redis://redis:6379/0
+      # The password must match the Redis command above.
+      ARGUS_REDIS_URL: redis://:${REDIS_PASSWORD:-argus-dev}@redis:6379/0
       ARGUS_STOCKFISH_PATH: /usr/games/stockfish
-      ARGUS_CORS_ORIGINS: '["http://localhost:3000", "http://localhost:3001"]'
+      # Phase 15 settings, all overridable from the host .env. Empty API keys
+      # keep local development open; production must set them (see
+      # scripts/validate_config.py).
+      ARGUS_API_KEYS: ${ARGUS_API_KEYS:-}
+      ARGUS_FEATURE_FLAGS: ${ARGUS_FEATURE_FLAGS:-}
+      ARGUS_ENGINE_MAX_CONCURRENCY: ${ARGUS_ENGINE_MAX_CONCURRENCY:-2}
+      ARGUS_ANALYSIS_QUEUE_LIMIT: ${ARGUS_ANALYSIS_QUEUE_LIMIT:-64}
+      # Browser origins allowed to call the API (comma-separated; a JSON list
+      # also works). WEB_HOST_PORT below must be included (3100 is the default;
+      # 3001 is commonly taken, e.g. Grafana).
+      ARGUS_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:3100,http://127.0.0.1:3100,http://localhost:3001,http://127.0.0.1:3001
+      # LLM coach: values come from the host .env; leave ARGUS_LLM_PROVIDER
+      # empty to run with the coach honestly disabled (501 on /api/coach/chat).
+      ARGUS_LLM_PROVIDER: ${ARGUS_LLM_PROVIDER:-}
+      ARGUS_LLM_MODEL: ${ARGUS_LLM_MODEL:-}
+      ARGUS_LLM_API_KEY: ${ARGUS_LLM_API_KEY:-}
+      ARGUS_LLM_BASE_URL: ${ARGUS_LLM_BASE_URL:-}
+      ARGUS_MODELS_DIR: /app/data/models
     ports:
       - "${API_HOST_PORT:-8002}:8000"
     depends_on:
@@ -56,21 +104,36 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
     volumes:
       # Source mounts keep the dev container in sync with the working tree.
       - ./apps/api/argus_api:/app/apps/api/argus_api:ro
       - ./packages/argus/argus:/app/packages/argus/argus:ro
+      - ./data:/app/data
 
   web:
+    image: argus-chess-web:${ARGUS_VERSION:-1.0.0}
     build:
       context: .
       dockerfile: docker/Dockerfile.web
+      labels:
+        org.opencontainers.image.title: "Caissa Web"
+        org.opencontainers.image.version: "${ARGUS_VERSION:-1.0.0}"
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+      # Must match the variable read by apps/web/src/lib/api.ts and the
+      # host-side API port mapping above.
+      NEXT_PUBLIC_API_URL: http://localhost:${API_HOST_PORT:-8002}
+      # Used by server-side rendering inside the container (reaches the API by
+      # service name); keep the port in sync with the API container's 8000.
+      API_INTERNAL_URL: http://api:8000
     ports:
-      - "${WEB_HOST_PORT:-3001}:3000"
+      - "${WEB_HOST_PORT:-3100}:3000"
     depends_on:
       - api
 

@@ -64,7 +64,7 @@ def parse_games(pgn_text: str, *, max_plies: int | None = DEFAULT_MAX_PLIES) -> 
                 details={"errors": [str(error) for error in game.errors[:5]]},
             )
         if not game.variations:
-            # ARGUS imports games to analyze them; a game without moves cannot
+            # Caissa imports games to analyze them; a game without moves cannot
             # be analyzed, so header-only PGNs are rejected explicitly.
             raise InvalidPgnError("Game contains no moves")
         games.append(_convert_game(game, max_plies))

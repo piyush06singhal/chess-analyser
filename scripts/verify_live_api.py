@@ -113,17 +113,16 @@ def main() -> int:
     print(f"   players: {stored.get('white_player')} vs {stored.get('black_player')}, "
           f"moves stored: {len(stored.get('moves') or [])}")
 
-    status, analysis = _request(f"{base}/api/analysis/{game_id}")
-    print(f"7. GET /api/analysis/{{id}} -> {status}")
+    # The per-move engine analysis is read from the one store every reader uses.
+    status, analysis = _request(f"{base}/api/analysis/games/{game_id}/moves")
+    print(f"7. GET /api/analysis/games/{{id}}/moves -> {status}")
     if status != 200 or not isinstance(analysis, dict):
         print(f"FAIL: fetch analysis failed: {analysis}")
         return 1
-    rows = analysis.get("analyses") or []
+    rows = analysis.get("moves") or []
     classified = sum(1 for row in rows if row.get("classification"))
-    # Color is derivable from ply parity (odd = white) — PositionAnalysis rows
-    # intentionally do not duplicate it.
-    colors = {"white" if (row.get("ply") or 0) % 2 == 1 else "black" for row in rows}
-    print(f"   stored rows: {len(rows)}, classified: {classified}, colors present: {sorted(colors)}")
+    colors = {row.get("mover") for row in rows if row.get("mover")}
+    print(f"   stored rows: {len(rows)}, classified: {classified}, sides present: {sorted(colors)}")
     if len(rows) != 33 or classified == 0:
         print("FAIL: stored analysis incomplete")
         return 1

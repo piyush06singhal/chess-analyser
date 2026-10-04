@@ -12,7 +12,7 @@
 // `?tab=` parameter keeps the selection linkable: the game page can hand over
 // `?game_id=…&ply=…` and it lands on the right surface.
 
-import { Suspense, useCallback } from "react";
+import { Suspense, useCallback, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import CoachConversation from "@/components/coach-conversation";
@@ -35,18 +35,28 @@ function CoachTabs() {
     ? requested
     : "coach";
 
+  // The live query string, so a write issued from an older render cannot rebuild
+  // the URL from stale state and revert a selection made since (the same hazard
+  // the intelligence explorer documents).
+  const queryRef = useRef(searchParams.toString());
+  useEffect(() => {
+    queryRef.current = searchParams.toString();
+  }, [searchParams]);
+
   // The URL is the state. Writing to it re-renders the server component tree, so
   // the two surfaces are genuinely unmounted/mounted rather than both kept alive
   // (which would mean two copies of the same context request in flight).
   const select = useCallback(
     (id: string) => {
-      const params = new URLSearchParams(searchParams.toString());
+      const params = new URLSearchParams(queryRef.current);
       if (id === "coach") params.delete("tab");
       else params.set("tab", id);
       const query = params.toString();
+      if (query === queryRef.current) return;
+      queryRef.current = query;
       router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
     },
-    [pathname, router, searchParams]
+    [pathname, router]
   );
 
   return (

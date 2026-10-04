@@ -102,25 +102,54 @@ function IntelligenceExplorer() {
       .catch(() => setMethod(null));
   }, []);
 
+  // The live query string, read by every write below rather than the value
+  // captured when a callback was created. A write issued from an older render —
+  // the map's auto-select is exactly that, resolving after the user has already
+  // clicked something — would otherwise rebuild the URL from stale state and
+  // silently revert the control the user just used. The ref is advanced by the
+  // write itself as well as on render, so two writes in one tick compose instead
+  // of the second discarding the first.
+  const queryRef = useRef(searchParams.toString());
+  useEffect(() => {
+    queryRef.current = searchParams.toString();
+  }, [searchParams]);
+
   // The single writer for every URL-backed control. A `replace` (not a push)
   // keeps the back button for navigation rather than for each control change.
   const setParams = useCallback(
     (updates: Record<string, string | null>) => {
-      const params = new URLSearchParams(searchParams.toString());
+      const params = new URLSearchParams(queryRef.current);
       for (const [key, value] of Object.entries(updates)) {
         if (value === null || value === "") params.delete(key);
         else params.set(key, value);
       }
       const query = params.toString();
+      // Rewriting the URL the browser already shows would re-render the tree for
+      // nothing, and it is the redundant write that reverts a newer one.
+      if (query === queryRef.current) return;
+      queryRef.current = query;
       router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
     },
-    [pathname, router, searchParams],
+    [pathname, router],
   );
 
   const viewOnMap = useCallback(
     (type: string, key: string) => {
       setParams({ tab: "map", type, key });
     },
+    [setParams],
+  );
+
+  // Stable identities: the map's node-list effect depends on `onSelect`, so an
+  // inline arrow would re-run it on every render and refetch the picker's nodes
+  // each time a URL-backed control changed.
+  const selectNode = useCallback(
+    (type: string, key: string) => setParams({ type, key }),
+    [setParams],
+  );
+
+  const changeDepth = useCallback(
+    (value: number) => setParams({ depth: String(value) }),
     [setParams],
   );
 
@@ -159,8 +188,8 @@ function IntelligenceExplorer() {
           nodeKey={nodeKey}
           depth={depth}
           nodeTypes={method?.node_types ?? []}
-          onSelect={(type, key) => setParams({ type, key })}
-          onDepthChange={(value) => setParams({ depth: String(value) })}
+          onSelect={selectNode}
+          onDepthChange={changeDepth}
         />
       ) : null}
 

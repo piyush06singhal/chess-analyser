@@ -6,9 +6,11 @@ name: quality
 # and real concurrency, so they are run before a release rather than on every
 # commit. CI that is too slow to read is CI nobody reads.
 #
-# Nothing here needs Postgres, Redis or Stockfish: the tests build their own
-# SQLite database (tests/conftest.py) and the engine suite is skipped with a
-# reason by `run_evaluation.py --no-engine`.
+# Nothing here needs Postgres or Redis: the tests build their own SQLite database
+# (tests/conftest.py). Stockfish *is* installed in the backend and browser jobs,
+# because several tests drive a real analysis run end to end and fail with
+# "Stockfish binary not found" without it; the engine-marked suite is still
+# excluded from the backend job by policy (`run_evaluation.py --no-engine`).
 
 on:
   push:
@@ -29,6 +31,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e "packages/argus[ml,dev]" -e apps/api
+
+      # The suite is engine-free by policy, not by accident: several tests drive
+      # a real analysis run (import -> analyse -> read the report) and fail with
+      # "Stockfish binary not found" when the binary is absent. Apt installs it
+      # at /usr/games/stockfish, which locate_stockfish already searches.
+      - name: Install Stockfish
+        run: sudo apt-get update && sudo apt-get install -y stockfish
 
       - name: Static correctness (ruff F, E9)
         run: python -m ruff check packages apps scripts tests
@@ -93,11 +102,13 @@ jobs:
           npm audit --audit-level=high
 
       - name: Secret, misconfiguration and vulnerability scan
-        # The tag is `v0.28.0` (leading `v`): `0.28.0` does not exist, so the
-        # action could not resolve and the whole security job failed to start.
-        # The Trivy DB is downloaded at run time, so this pin ages the wrapper,
-        # not the vulnerability data.
-        uses: aquasecurity/trivy-action@v0.28.0
+        # Pinned by tag. v0.28.0 is broken: it references
+        # aquasecurity/setup-trivy@v0.2.1, a tag that was never published, so the
+        # action could not resolve and the job died during setup. Versions from
+        # v0.31.0 pin that dependency by commit SHA instead, which always
+        # resolves. The Trivy DB is downloaded at run time, so this pins the
+        # wrapper, not the vulnerability data.
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -189,14 +200,29 @@ jobs:
             curl -sf http://127.0.0.1:8002/health >/dev/null && break || sleep 2
           done
 
+      # The five user journeys (§50) run start-to-finish against the same live
+      # API + engine, so the sequence is exercised rather than only the pieces.
+      # They run *first* deliberately: journey 1 imports and analyses a real game,
+      # which is what gives the browser suite a populated library. Data-dependent
+      # pages (the map's neighbourhood, a finished game's report) then assert
+      # against real relationships instead of skipping for want of a fixture.
+      - name: User journeys (end to end)
+        run: python scripts/verify_journeys.py
+
+      # Journey 1 imported and analysed a real game, which is *domain* data, not
+      # graph data: the intelligence graph is materialized from the domain, not
+      # derived on read. Rebuild it from what is now stored, or the map's
+      # neighbourhood and the "Why?" traces have nothing to draw and the
+      # data-dependent specs skip in CI forever. Verified locally: a rebuild after
+      # one imported game gives its players a 40-node neighbourhood.
+      - name: Materialize the intelligence graph
+        run: |
+          curl -sf -X POST "http://127.0.0.1:8002/api/graph/rebuild" >/dev/null
+          curl -sf "http://127.0.0.1:8002/api/graph/health" | head -c 300; echo
+
       - name: Browser + accessibility tests
         working-directory: apps/web
         run: npx playwright test
-
-      # The five user journeys (§50) run start-to-finish against the same live
-      # API + engine, so the sequence is exercised rather than only the pieces.
-      - name: User journeys (end to end)
-        run: python scripts/verify_journeys.py
 
       - name: Upload Playwright report
         if: always()

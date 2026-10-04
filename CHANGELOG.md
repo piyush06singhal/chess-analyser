@@ -10,6 +10,59 @@ uses phase-based versioning rather than SemVer.
 
 ## [Phase 17 / 1.0.0] — Final release candidate, verification & production sign-off
 
+### Continuous integration (the first real GitHub Actions run)
+
+The workflow had only ever been read, not run. Its first run on GitHub found four
+defects that never appeared locally, and one product bug that only appears under
+load. All are fixed.
+
+- **`frontend`: type-check failed on a fresh checkout.** `LayoutProps` is
+generated into `.next/types`, which is gitignored, and CI type-checked before it
+built. `npx next typegen` now runs first, so type-check no longer depends on
+build order (reproduced locally: the same error and exit code as CI, then clean).
+- **`security`: the job died during setup, before scanning anything.**
+`aquasecurity/trivy-action@v0.28.0` references `aquasecurity/setup-trivy@v0.2.1`,
+a tag that was never published, so the action could not resolve. Pinned to
+`v0.36.0`, which pins that dependency by commit SHA instead. The Trivy DB is still
+downloaded at run time, so this pins the wrapper, not the vulnerability data.
+- **`backend`: 45+ failures from a missing engine.** The suite is engine-free *by
+policy* — `run_evaluation.py --no-engine` and `pytest -m "not engine"` — but
+several tests that are not engine-marked drive a real analysis run (import →
+analyse → read the report) and failed with
+`Stockfish binary not found`. The job now installs Stockfish; apt's
+`/usr/games/stockfish` was already in `locate_stockfish`'s search list, so no
+configuration is needed.
+- **`browser`: two defects at once.** CI installed only Chromium while
+`playwright.config.ts` runs three engines, which would have taken two thirds of
+the matrix with it; it now installs all three. And the map spec required stored
+graph relationships that CI never created.
+- **The graph is materialized in CI.** Journey 1 imports and analyses a real game,
+but the intelligence graph is materialized *from* the domain rather than derived
+on read, so the browser job rebuilds it (`POST /api/graph/rebuild`) first. The
+journeys also now run **before** the browser tests, so data-dependent specs (the
+map's neighbourhood, a finished game's report) assert against real relationships
+instead of skipping for want of a fixture. Verified locally: a rebuild after one
+imported game gives its players a 40-node neighbourhood.
+- **`intelligence-map.spec.ts` no longer depends on a populated library.** It
+probes the API for a node with a real neighbourhood and deep-links to that node —
+a stronger test of the deep-link claim than relying on the picker's default — and
+skips with a reason when the library is genuinely empty, which is the rule the
+report suite already followed: a missing fixture is not a frontend defect.
+
+### Fixed — a URL-backed control could revert itself
+- **The Intelligence Explorer's depth control could snap back to its old value.**
+`setParams` rebuilt the query string from the `searchParams` captured when its
+callback was created. The map's auto-select resolves asynchronously and issues a
+write from the render *before* the user's click, so its stale write could land
+last and revert the control the user had just used. Found by the cross-browser
+suite under load (`depth=3` reverting to `depth=1`), and reachable by any user who
+clicks a control quickly after the page loads. Writes now build from the live
+query string, a write that changes nothing is dropped, and the map's
+`onSelect`/`onDepthChange` are stable identities so its node-list effect no longer
+refetches on every URL change. Same fix applied to the coach tabs, which shared
+the pattern. Verified: 48/48 on the map spec (8 repeats × 3 engines) and the full
+210-test matrix green.
+
 ### Hardening (post-RC audit)
 - **Every page now has its own title and one top-level heading.** Client routes
   (`/games`, `/coach`, `/training`, `/live`, …) fell back to the root title; they
